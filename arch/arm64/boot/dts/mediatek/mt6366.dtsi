@@ -121,7 +121,7 @@
 
 		mt6366keys: mt6366keys {
 			compatible = "mediatek,mt6366-keys";
-			mediatek,long-press-mode = <1>;
+			mediatek,long-press-mode = <2>;
 			power-off-time-sec = <0>;
 			power {
 				linux,keycodes = <116>;
@@ -532,6 +532,7 @@
 
 		mt6358_lbat: pmic_lbat_service {
 			compatible = "mediatek,mt6358-lbat_service";
+			status = "disabled";
 		};
 
 		mt6358codec: mt6358codec {
