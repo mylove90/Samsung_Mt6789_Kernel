@@ -319,6 +319,58 @@ static int mtk_pmic_key_setup(struct mtk_pmic_keys *keys,
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+struct mtk_pmic_keys *secdbg_keys;
+
+int mtk_pmic_pwrkey_status(void)
+{
+	struct mtk_pmic_keys_info *pwrkey;
+	const struct mtk_pmic_keys_regs *regs;
+	u32 key_deb, pressed;
+
+	if (!secdbg_keys)
+		return -EINVAL;
+
+	pwrkey = &secdbg_keys->keys[MTK_PMIC_PWRKEY_INDEX];
+	regs = pwrkey->regs;
+
+	regmap_read(secdbg_keys->regmap, regs->deb_reg, &key_deb);
+	dev_info(secdbg_keys->dev, "Read register 0x%x and mask 0x%x and value: 0x%x\n",
+		 regs->deb_reg, 1 << regs->deb_mask, key_deb);
+	key_deb &= 1 << regs->deb_mask;
+	pressed = !key_deb;
+
+	dev_info(secdbg_keys->dev, "%s power key\n", pressed ? "pressed" : "released");
+
+	return pressed;
+}
+EXPORT_SYMBOL(mtk_pmic_pwrkey_status);
+
+int mtk_pmic_homekey_status(void)
+{
+	struct mtk_pmic_keys_info *homekey;
+	const struct mtk_pmic_keys_regs *regs;
+	u32 key_deb, pressed;
+
+	if (!secdbg_keys)
+		return -EINVAL;
+
+	homekey = &secdbg_keys->keys[MTK_PMIC_HOMEKEY_INDEX];
+	regs = homekey->regs;
+
+	regmap_read(secdbg_keys->regmap, regs->deb_reg, &key_deb);
+	dev_info(secdbg_keys->dev, "Read register 0x%x and mask 0x%x and value: 0x%x\n",
+		 regs->deb_reg, 1 << regs->deb_mask, key_deb);
+	key_deb &= 1 << regs->deb_mask;
+	pressed = !key_deb;
+
+	dev_info(secdbg_keys->dev, "%s home key\n", pressed ? "pressed" : "released");
+
+	return pressed;
+}
+EXPORT_SYMBOL(mtk_pmic_homekey_status);
+#endif
+
 static int __maybe_unused mtk_pmic_keys_suspend(struct device *dev)
 {
 	struct mtk_pmic_keys *keys = dev_get_drvdata(dev);
@@ -463,6 +515,9 @@ static int mtk_pmic_keys_probe(struct platform_device *pdev)
 		return error;
 	}
 
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+	secdbg_keys = keys;
+#endif
 	mtk_pmic_keys_lp_reset_setup(keys, mtk_pmic_regs);
 
 	platform_set_drvdata(pdev, keys);
