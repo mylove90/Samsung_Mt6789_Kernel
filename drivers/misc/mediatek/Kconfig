@@ -50,9 +50,17 @@ source "drivers/misc/mediatek/widevine_drm/Kconfig"
 source "drivers/misc/mediatek/mminfra/Kconfig"
 source "drivers/misc/mediatek/vmm_spm/Kconfig"
 source "drivers/misc/mediatek/vmm_dbg/Kconfig"
+source "drivers/misc/mediatek/tui/Kconfig"
 endmenu # MultiMedia, Display, Camera
 
 menu "Security"
+config TEEGRIS_TEE_SUPPORT
+	bool "TEEGRIS_TEE_SUPPORT"
+	default n
+	depends on TZDEV
+	help
+	 TEEGRIS_TEE_SUPPORT
+
 source "drivers/misc/mediatek/trusted_mem/Kconfig"
 source "drivers/misc/mediatek/geniezone/Kconfig"
 source "drivers/misc/mediatek/masp/Kconfig"
@@ -187,4 +195,13 @@ config FPGA_EARLY_PORTING
 	  platform and non-FPGA platform.
 	  Say Y here if you are doing FPGA early porting.
 	  If unsure, say N
+
+config MTK_TC10_FEATURE
+	bool "MTK_TC10_FEATURE"
+	help
+	  MTK_TC10_FEATURE is defined specifically for MTK TC10 customer
+	  to do their kernel modification.
+	  Select "y" if the project is for TC10.
+	  Select "n" if unsure.
 endmenu # Misc
+

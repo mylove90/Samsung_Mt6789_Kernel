@@ -131,15 +131,12 @@ static void perfctl_notify_fpsgo_nn_end(
 	if (!exec_time)
 		goto out_exec_time_malloc_fail;
 
-	if (perfctl_copy_from_user(boost,
-		msgKM->boost, size * sizeof(__s32)))
-		goto out_perfctl_fail;
-	if (perfctl_copy_from_user(device,
-		msgKM->device, size * sizeof(__s32)))
-		goto out_perfctl_fail;
-	if (perfctl_copy_from_user(exec_time,
-		msgKM->exec_time, size * sizeof(__u64)))
-		goto out_perfctl_fail;
+	perfctl_copy_from_user(boost,
+		msgKM->boost, size * sizeof(__s32));
+	perfctl_copy_from_user(device,
+		msgKM->device, size * sizeof(__s32));
+	perfctl_copy_from_user(exec_time,
+		msgKM->exec_time, size * sizeof(__u64));
 
 	fpsgo_notify_nn_job_end_fp(msgKM->pid, msgKM->tid, msgKM->mid,
 			msgKM->num_step, boost, device, exec_time);
@@ -149,8 +146,6 @@ static void perfctl_notify_fpsgo_nn_end(
 	perfctl_copy_to_user(msgUM, msgKM, sizeof(struct _EARA_NN_PACKAGE));
 	return;
 
-out_perfctl_fail:
-	kfree(exec_time);
 out_exec_time_malloc_fail:
 	kfree(device);
 out_device_malloc_fail:

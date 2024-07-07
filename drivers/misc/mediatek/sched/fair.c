@@ -396,10 +396,8 @@ void mtk_find_energy_efficient_cpu(void *data, struct task_struct *p, int prev_c
 	rcu_read_lock();
 	if (!uclamp_min_ls)
 		latency_sensitive = uclamp_latency_sensitive(p);
-	else {
-		latency_sensitive = (p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0) ||
-					uclamp_latency_sensitive(p);
-	}
+	else
+		latency_sensitive = p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0;
 
 	pd = rcu_dereference(rd->pd);
 	if (!pd || READ_ONCE(rd->overutilized)) {
@@ -618,10 +616,8 @@ static struct task_struct *detach_a_hint_task(struct rq *src_rq, int dst_cpu)
 
 		if (!uclamp_min_ls)
 			latency_sensitive = uclamp_latency_sensitive(p);
-		else {
-			latency_sensitive = (p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0) ||
-					uclamp_latency_sensitive(p);
-		}
+		else
+			latency_sensitive = p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0;
 
 		if (latency_sensitive &&
 			task_util <= dst_capacity) {
@@ -649,10 +645,8 @@ inline bool is_task_latency_sensitive(struct task_struct *p)
 	rcu_read_lock();
 	if (!uclamp_min_ls)
 		latency_sensitive = uclamp_latency_sensitive(p);
-	else {
-		latency_sensitive = (p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0) ||
-					uclamp_latency_sensitive(p);
-	}
+	else
+		latency_sensitive = p->uclamp_req[UCLAMP_MIN].value > 0 ? 1 : 0;
 	rcu_read_unlock();
 
 	return latency_sensitive;

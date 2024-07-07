@@ -4310,6 +4310,8 @@ s32 cmdq_pkt_wait_flush_ex_result(struct cmdqRecStruct *handle)
 	} while (1);
 
 	status = cmdq_pkt_wait_complete(handle->pkt);
+	if (handle->pkt_rb)
+		status = cmdq_pkt_wait_complete(handle->pkt_rb);
 
 	if (handle->profile_exec) {
 		u32 *va = cmdq_pkt_get_perf_ret(handle->pkt);
@@ -4822,7 +4824,7 @@ unsigned long cmdq_get_tracing_mark(void)
 
 noinline int tracing_mark_write(char *fmt, ...)
 {
-#if IS_ENABLED(CONFIG_TRACING)
+#if IS_ENABLED(CONFIG_TRACING) && IS_ENABLED(CONFIG_MTK_MDP_DEBUG)
 	char buf[TRACE_MSG_LEN];
 	va_list args;
 	int len;

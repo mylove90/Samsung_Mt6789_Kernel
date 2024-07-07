@@ -80,6 +80,16 @@
 #define IS_RESTARTSYS_ERROR(err) (err == -ERESTARTSYS)
 #define RETRY_REQUIRED(cnt) (cnt <= TIPC_RETRY_MAX_COUNT)
 
+#if defined(CONFIG_TEEGRIS_TEE_SUPPORT)
+#define TYPE_STRUCT
+#define teec_context TEEC_Context
+#define teec_session TEEC_Session
+#define teec_uuid TEEC_UUID
+#define teec_operation TEEC_Operation
+#else
+#define TYPE_STRUCT struct
+#endif
+
 DEFINE_MUTEX(fd_mutex);
 DEFINE_MUTEX(session_mutex);
 
@@ -794,23 +804,23 @@ static int ree_service_threads(uint32_t type, uint32_t val_a, uint32_t val_b,
 
 #if IS_ENABLED(CONFIG_TEE)
 /* teec weak functions are used when teec function are unavailable. */
-__weak u32 teec_initialize_context(const char *name, struct teec_context *context)
+__weak u32 teec_initialize_context(const char *name, TYPE_STRUCT teec_context *context)
 {
 	(void)name;
 	(void)context;
 	return 0;
 }
 
-__weak void teec_finalize_context(struct teec_context *context)
+__weak void teec_finalize_context(TYPE_STRUCT teec_context *context)
 {
 	(void)context;
 }
 
-__weak u32 teec_open_session(struct teec_context *context,
-			     struct teec_session *session,
-			     const struct teec_uuid *destination,
+__weak u32 teec_open_session(TYPE_STRUCT teec_context *context,
+			     TYPE_STRUCT teec_session *session,
+			     const TYPE_STRUCT teec_uuid *destination,
 			     u32 connection_method, const void *connection_data,
-			     struct teec_operation *operation,
+			     TYPE_STRUCT teec_operation *operation,
 			     u32 *return_origin)
 {
 	(void)context;
@@ -822,14 +832,14 @@ __weak u32 teec_open_session(struct teec_context *context,
 	return 0;
 }
 
-__weak void teec_close_session(struct teec_session *session)
+__weak void teec_close_session(TYPE_STRUCT teec_session *session)
 {
 	(void)session;
 }
 
-__weak u32 teec_invoke_command(struct teec_session *session,
+__weak u32 teec_invoke_command(TYPE_STRUCT teec_session *session,
 			       u32 command_id,
-			       struct teec_operation *operation,
+			       TYPE_STRUCT teec_operation *operation,
 			       u32 *return_origin)
 {
 	(void)session;
@@ -886,7 +896,7 @@ TZ_RESULT _Gz_KreeServiceCall_body(KREE_SESSION_HANDLE handle, uint32_t command,
 	case REE_SERVICE_CMD_TEE_INIT_CTX:
 		ret = TEEC_InitializeContext(
 			(char *)param[0].mem.buffer,
-			(struct TEEC_Context *)param[1].mem.buffer);
+			(TYPE_STRUCT TEEC_Context *)param[1].mem.buffer);
 		if (ret != TEEC_SUCCESS)
 			KREE_ERR("[ERROR] TEEC_InitializeContext failed: %x\n",
 				 ret);
@@ -895,14 +905,14 @@ TZ_RESULT _Gz_KreeServiceCall_body(KREE_SESSION_HANDLE handle, uint32_t command,
 
 	case REE_SERVICE_CMD_TEE_FINAL_CTX:
 		TEEC_FinalizeContext(
-			(struct TEEC_Context *)param[0].mem.buffer);
+			(TYPE_STRUCT TEEC_Context *)param[0].mem.buffer);
 		break;
 
 	case REE_SERVICE_CMD_TEE_OPEN_SE:
 		ret = TEEC_OpenSession(
-			(struct TEEC_Context *)param[0].mem.buffer,
-			(struct TEEC_Session *)param[1].mem.buffer,
-			(struct TEEC_UUID *)param[2].mem.buffer,
+			(TYPE_STRUCT TEEC_Context *)param[0].mem.buffer,
+			(TYPE_STRUCT TEEC_Session *)param[1].mem.buffer,
+			(TYPE_STRUCT TEEC_UUID *)param[2].mem.buffer,
 			TEEC_LOGIN_PUBLIC, NULL, NULL, NULL);
 		if (ret != TEEC_SUCCESS)
 			KREE_ERR("[ERROR] TEEC_OpenSession failed: %x\n", ret);
@@ -910,14 +920,14 @@ TZ_RESULT _Gz_KreeServiceCall_body(KREE_SESSION_HANDLE handle, uint32_t command,
 		break;
 
 	case REE_SERVICE_CMD_TEE_CLOSE_SE:
-		TEEC_CloseSession((struct TEEC_Session *)param[0].mem.buffer);
+		TEEC_CloseSession((TYPE_STRUCT TEEC_Session *)param[0].mem.buffer);
 		break;
 
 	case REE_SERVICE_CMD_TEE_INVOK_CMD:
 		ret = TEEC_InvokeCommand(
-			(struct TEEC_Session *)param[0].mem.buffer,
+			(TYPE_STRUCT TEEC_Session *)param[0].mem.buffer,
 			param[1].value.a,
-			(struct TEEC_Operation *)param[2].mem.buffer, NULL);
+			(TYPE_STRUCT TEEC_Operation *)param[2].mem.buffer, NULL);
 		if (ret != TEEC_SUCCESS)
 			KREE_ERR("[ERROR] TEEC_InvokeCommand failed: %x\n",
 				 ret);

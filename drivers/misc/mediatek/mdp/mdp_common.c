@@ -925,6 +925,10 @@ static s32 cmdq_mdp_consume_handle(void)
 	bool acquired = false;
 	struct CmdqCBkStruct *callback = cmdq_core_get_group_cb();
 	bool secure_run = false;
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+	struct ContextStruct *ctx;
+	u32 task_cnt;
+#endif
 
 	/* operation for tasks_wait list need task mutex */
 	mutex_lock(&mdp_task_mutex);
@@ -953,6 +957,20 @@ static s32 cmdq_mdp_consume_handle(void)
 				handle->secData.is_secure ? "true" : "false");
 			break;
 		}
+
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+		if (handle->secData.is_secure) {
+			ctx = cmdq_core_get_context();
+			task_cnt = ctx->thread[(u32)cmdq_mdp_get_sec_thread()].handle_count;
+			/* sec thread and more than 4 task -> queue the task */
+			if (task_cnt + 1 > CMDQ_MAX_TASK_CNT_ON_THREAD) {
+				mutex_unlock(&mdp_thread_mutex);
+				CMDQ_ERR("%s drop new task since there will be more than %d\n",
+					__func__, CMDQ_MAX_TASK_CNT_ON_THREAD);
+				break;
+			}
+		}
+#endif
 
 		handle->thread = cmdq_mdp_find_free_thread(handle);
 		if (handle->thread == CMDQ_INVALID_THREAD) {
@@ -1391,6 +1409,8 @@ s32 cmdq_mdp_handle_sec_setup(struct cmdqSecDataStruct *secData,
 			vfree(handle->sec_isp_msg2);
 			return -ENOMEM;
 		}
+		if (is_sec_meta_data_support)
+			cmdq_mdp_cmdqSecIspMeta_fd_to_handle(&secData->ispMeta);
 		cmdq_mdp_fill_isp_meta(&secData->ispMeta,
 			handle->sec_isp_msg1, handle->sec_isp_msg2, true);
 		meta_type = CMDQ_METAEX_CQ;
@@ -1439,6 +1459,39 @@ s32 cmdq_mdp_handle_sec_setup(struct cmdqSecDataStruct *secData,
 	return 0;
 #else
 	return 0;
+#endif
+}
+
+void cmdq_mdp_cmdqSecIspMeta_fd_to_handle(struct cmdqSecIspMeta *ispMeta)
+{
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+	struct dma_buf *buf;
+
+	if (ispMeta->BpciHandle) {
+		buf = dma_buf_get(ispMeta->BpciHandle);
+		ispMeta->BpciHandle = dmabuf_to_secure_handle(buf);
+		dma_buf_put(buf);
+	}
+	if (ispMeta->LsciHandle) {
+		buf = dma_buf_get(ispMeta->LsciHandle);
+		ispMeta->LsciHandle = dmabuf_to_secure_handle(buf);
+		dma_buf_put(buf);
+	}
+	if (ispMeta->LceiHandle) {
+		buf = dma_buf_get(ispMeta->LceiHandle);
+		ispMeta->LceiHandle = dmabuf_to_secure_handle(buf);
+		dma_buf_put(buf);
+	}
+	if (ispMeta->DepiHandle) {
+		buf = dma_buf_get(ispMeta->DepiHandle);
+		ispMeta->DepiHandle = dmabuf_to_secure_handle(buf);
+		dma_buf_put(buf);
+	}
+	if (ispMeta->DmgiHandle) {
+		buf = dma_buf_get(ispMeta->DmgiHandle);
+		ispMeta->DmgiHandle = dmabuf_to_secure_handle(buf);
+		dma_buf_put(buf);
+	}
 #endif
 }
 

@@ -142,6 +142,7 @@ static struct reg_oc_debug_t mt6366_reg_oc_debug[] = {
 	REG_OC_DEBUG(vs1),
 	REG_OC_DEBUG(vs2),
 	MD_REG_OC_DEBUG(vpa, MD_REG_OC_0),
+	MD_REG_OC_DEBUG(VPA, MD_REG_OC_0),
 	REG_OC_DEBUG(vcore_pr),
 	MD_REG_OC_DEBUG(vfe28, MD_REG_OC_1),
 	REG_OC_DEBUG(vxo22),
@@ -157,7 +158,7 @@ static struct reg_oc_debug_t mt6366_reg_oc_debug[] = {
 	REG_OC_DEBUG(va12),
 	REG_OC_DEBUG(vaux18),
 	REG_OC_DEBUG(vaud28),
-	REG_OC_DEBUG(vio28),
+	/*REG_OC_DEBUG(vio28),*/
 	REG_OC_DEBUG(vio18),
 	REG_OC_DEBUG(vsram_proc11),
 	REG_OC_DEBUG(vsram_proc12),
@@ -171,7 +172,7 @@ static struct reg_oc_debug_t mt6366_reg_oc_debug[] = {
 	/*REG_OC_DEBUG(vsim2),*/
 	REG_OC_DEBUG(vibr),
 	REG_OC_DEBUG(vusb),
-	REG_OC_DEBUG(vbif28),
+	/*REG_OC_DEBUG(vbif28),*/
 };
 
 static int md_reg_oc_notify(struct reg_oc_debug_t *reg_oc_dbg)

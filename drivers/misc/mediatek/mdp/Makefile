@@ -21,10 +21,8 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/smi/ \
              -I$(srctree)/drivers/iommu \
              -I$(srctree)/drivers/misc/mediatek/iommu/
 
-ifeq ($(CONFIG_MICROTRUST_TEE_SUPPORT),m)
 ifeq ($(CONFIG_MTK_MDP_MTEE_SUPPORT),m)
 ccflags-y += -I$(srctree)/drivers/dma-buf/heaps
-endif
 endif
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/mailbox/
@@ -48,10 +46,8 @@ endif
 #ccflags-y += -DMDP_COMMAND_SIMULATE
 
 # Secure path for SVP/HDCP/SecCam
-ifeq ($(CONFIG_MICROTRUST_TEE_SUPPORT),m)
 ifeq ($(CONFIG_MTK_MDP_MTEE_SUPPORT),m)
 ccflags-y += -DCMDQ_SECURE_PATH_SUPPORT
-endif
 endif
 
 # platform dependent definition

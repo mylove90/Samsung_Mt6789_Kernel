@@ -3586,11 +3586,12 @@ static void mtk_iommu_iova_map_dump(struct seq_file *s, u64 iova, u32 tab_id)
 		for (i = 0; i < MTK_IOVA_SPACE_NUM; i++) {
 			list_for_each_entry_safe(plist, n, &map_list.head[i], list_node)
 				if (plist->tab_id == tab_id)
-					iommu_dump(s, "%-6u 0x%-12llx 0x%-8zx %u.%06u\n",
-						plist->tab_id, plist->iova,
-						plist->size,
-						(unsigned int)plist->time_high,
-						(unsigned int)plist->time_low);
+					iommu_dump(s, "%-6u 0x%-12llx 0x%-8zx %llu.%06u\n",
+						   plist->tab_id,
+						   plist->iova,
+						   plist->size,
+						   plist->time_high,
+						   (unsigned int)plist->time_low);
 		}
 		spin_unlock_irqrestore(&map_list.lock, flags);
 		return;
@@ -3599,11 +3600,12 @@ static void mtk_iommu_iova_map_dump(struct seq_file *s, u64 iova, u32 tab_id)
 	list_for_each_entry_safe(plist, n, &map_list.head[id], list_node)
 		if (plist->tab_id == tab_id && iova <= (plist->iova + SZ_4M) &&
 		    iova >= (plist->iova - SZ_4M))
-			iommu_dump(s, "%-6u 0x%-12llx 0x%-8zx %u.%06u\n",
-				plist->tab_id, plist->iova,
-				plist->size,
-				(unsigned int)plist->time_high,
-				(unsigned int)plist->time_low);
+			iommu_dump(s, "%-6u 0x%-12llx 0x%-8zx %llu.%06u\n",
+				   plist->tab_id,
+				   plist->iova,
+				   plist->size,
+				   plist->time_high,
+				   (unsigned int)plist->time_low);
 	spin_unlock_irqrestore(&map_list.lock, flags);
 }
 
@@ -4507,9 +4509,9 @@ static void mtk_iommu_iova_alloc_dump(struct seq_file *s, struct device *dev)
 static void mtk_iova_dbg_alloc(struct device *dev, struct iova_domain *iovad,
 			       dma_addr_t iova, size_t size)
 {
+	u32 tab_id;
 	struct iova_info *iova_buf;
 	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
-	u32 tab_id;
 
 	if (!fwspec) {
 		pr_info("%s fail, dev(%s) is not iommu-dev\n",
