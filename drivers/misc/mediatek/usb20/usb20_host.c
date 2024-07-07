@@ -28,6 +28,9 @@
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
 #include <linux/phy/phy.h>
+#if IS_ENABLED(CONFIG_SND_MTK_USB_AUDIO_MODULE)
+#include <linux/usb/mtk-usb-audio.h>
+#endif
 
 MODULE_LICENSE("GPL v2");
 
@@ -214,6 +217,9 @@ void mt_usb_host_connect(int delay)
 {
 	typec_req_host = true;
 	DBG(0, "%s\n", typec_req_host ? "connect" : "disconnect");
+#if IS_ENABLED(CONFIG_SND_MTK_USB_AUDIO_MODULE)
+	mtk_usb_audio_init();
+#endif
 	issue_host_work(CONNECTION_OPS_CONN, delay, true);
 }
 EXPORT_SYMBOL(mt_usb_host_connect);
@@ -222,6 +228,9 @@ void mt_usb_host_disconnect(int delay)
 {
 	typec_req_host = false;
 	DBG(0, "%s\n", typec_req_host ? "connect" : "disconnect");
+#if IS_ENABLED(CONFIG_SND_MTK_USB_AUDIO_MODULE)
+	mtk_usb_audio_exit();
+#endif
 	issue_host_work(CONNECTION_OPS_DISC, delay, true);
 }
 EXPORT_SYMBOL(mt_usb_host_disconnect);
@@ -420,8 +429,7 @@ static void do_host_work(struct work_struct *data)
 		/* setup fifo for host mode */
 		ep_config_from_table_for_host(mtk_musb);
 
-		if (!mtk_musb->host_suspend)
-			__pm_stay_awake(mtk_musb->usb_lock);
+		__pm_stay_awake(mtk_musb->usb_lock);
 
 		/* this make PHY operation workable */
 		musb_platform_enable(mtk_musb);
@@ -445,7 +453,7 @@ static void do_host_work(struct work_struct *data)
 		musb_writeb(mtk_musb->mregs,
 				MUSB_DEVCTL, (devctl | MUSB_DEVCTL_SESSION));
 
-		/* phy_set_mode(glue->phy, PHY_MODE_USB_HOST); */
+		phy_set_mode(glue->phy, PHY_MODE_USB_HOST);
 		set_usb_phy_mode(PHY_MODE_USB_HOST);
 
 		musb_start(mtk_musb);
