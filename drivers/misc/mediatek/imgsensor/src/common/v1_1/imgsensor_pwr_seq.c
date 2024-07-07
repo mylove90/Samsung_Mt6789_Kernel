@@ -11,6 +11,74 @@
 
 /* Legacy design */
 struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
+#if defined(S5KJN1_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_S5KJN1_MIPI_RAW,
+		{
+			{RST, Vol_Low, 1},
+			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1050, 1},
+			{AFVDD, Vol_2800, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 5}
+		},
+	},
+#endif
+#if defined(GC08A3F_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_GC08A3F_MIPI_RAW,
+		{
+			{RST, Vol_Low, 1},
+			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1200, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 5}
+		},
+	},
+#endif
+#if defined(GC5035U_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_GC5035U_MIPI_RAW,
+		{
+			{RST, Vol_Low, 1},
+			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1200, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 5},
+		},
+	},
+#endif
+#if defined(GC02M1_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_GC02M1_MIPI_RAW,
+		{
+			{RST, Vol_Low, 2},
+			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1800, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 2},
+			{RST, Vol_High, 2},
+		},
+	},
+#endif
+#if defined(GC02M1B_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_GC02M1B_MIPI_RAW,
+		{
+			{RST, Vol_Low, 2},
+			{DOVDD, Vol_1800, 1},
+			{DVDD, Vol_1800, 1},
+			{AVDD, Vol_2800, 1},
+			{SensorMCLK, Vol_High, 2},
+			{RST, Vol_High, 2}
+
+		},
+	},
+#endif
+
 #if defined(IMX766_MIPI_RAW)
 	{
 		SENSOR_DRVNAME_IMX766_MIPI_RAW,
@@ -541,6 +609,19 @@ struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
 			{AFVDD, Vol_2800, 1},
 			{PDN, Vol_High, 0},
 			{RST, Vol_High, 5}
+		},
+	},
+#endif
+#if defined(IMX258F_MIPI_RAW)
+	{
+		SENSOR_DRVNAME_IMX258F_MIPI_RAW,
+		{
+			{RST, Vol_Low, 1},
+			{AVDD, Vol_2800, 0},
+			{DVDD, Vol_1200, 0},
+			{DOVDD, Vol_1800, 0},
+			{SensorMCLK, Vol_High, 1},
+			{RST, Vol_High, 13}
 		},
 	},
 #endif
