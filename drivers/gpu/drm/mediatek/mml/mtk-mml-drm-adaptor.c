@@ -72,6 +72,9 @@ enum mml_mode mml_drm_query_cap(struct mml_drm_ctx *ctx,
 		}
 	}
 
+	if (info->dest_cnt > MML_MAX_OUTPUTS)
+		info->dest_cnt = MML_MAX_OUTPUTS;
+
 	if (!info->src.format) {
 		mml_err("[drm]invalid src mml color format %#010x", info->src.format);
 		goto not_support;
@@ -738,6 +741,12 @@ s32 mml_drm_submit(struct mml_drm_ctx *ctx, struct mml_submit *submit,
 			}
 		}
 	}
+
+	/* always fixup dest_cnt > MML_MAX_OUTPUTS */
+	if (submit->info.dest_cnt > MML_MAX_OUTPUTS)
+		submit->info.dest_cnt = MML_MAX_OUTPUTS;
+	if (submit->buffer.dest_cnt > MML_MAX_OUTPUTS)
+		submit->buffer.dest_cnt = MML_MAX_OUTPUTS;
 
 	/* always fixup format/modifier for afbc case
 	 * the format in info should change to fourcc format in future design

@@ -18,6 +18,7 @@
 #include "mtk_drm_session.h"
 #include "mtk_drm_helper.h"
 #include "../mml/mtk-mml-drm-adaptor.h"
+#include "mtk_notify.h"
 
 #define MAX_CONNECTOR 3
 
@@ -99,6 +100,7 @@ struct mtk_drm_private {
 	enum MTK_DRM_SESSION_MODE session_mode;
 	atomic_t crtc_present[MAX_CRTC];
 	atomic_t crtc_sf_present[MAX_CRTC];
+	atomic_t crtc_rel_present[MAX_CRTC];
 
 	struct device_node *mutex_node;
 	struct device *mutex_dev;
@@ -181,6 +183,8 @@ struct mtk_drm_private {
 	wait_queue_head_t signal_mml_job_done_wq;
 
 	unsigned int seg_id;
+
+	struct mtk_uevent_dev uevent_data;
 };
 
 struct mtk_drm_property {
@@ -348,5 +352,5 @@ void mtk_free_mml_submit(struct mml_submit *temp);
 int copy_mml_submit(struct mml_submit *src, struct mml_submit *dst);
 void **mtk_drm_disp_sec_cb_init(void);
 void **mtk_drm_disp_mtee_cb_init(void);
-
+extern int mtk_notifier_call_chain(unsigned long val, void *v);
 #endif /* MTK_DRM_DRV_H */

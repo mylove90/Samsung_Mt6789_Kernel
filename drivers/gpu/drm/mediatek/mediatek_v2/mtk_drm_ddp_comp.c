@@ -523,16 +523,10 @@ static int mtk_ddp_comp_irq_work_init(struct mtk_ddp_comp *ddp_comp, int index)
 int mtk_ddp_comp_create_workqueue(struct mtk_ddp_comp *ddp_comp)
 {
 	int i = 0;
-	int ret = 0;
 	char wq_buf[64] = {0};
 
 	memset(wq_buf, 0, sizeof(wq_buf));
-	ret = snprintf(wq_buf, sizeof(wq_buf), "mtk_%s_wq", mtk_dump_comp_str_id(ddp_comp->id));
-	if (ret < 0) {
-		DDPPR_ERR("%s snprintf fail: %d\n", __func__, ret);
-		/* Handle snprintf() error */
-		return -EINVAL;
-	}
+	snprintf(wq_buf, sizeof(wq_buf), "mtk_%s_wq", mtk_dump_comp_str_id(ddp_comp->id));
 	DDPMSG("begin mtk_ddp_comp_create %d: %s\n", ddp_comp->id, wq_buf);
 
 	ddp_comp->wq = create_singlethread_workqueue(wq_buf);
@@ -895,20 +889,20 @@ void mtk_ddp_comp_pm_disable(struct mtk_ddp_comp *comp)
 void mtk_ddp_comp_clk_prepare(struct mtk_ddp_comp *comp)
 {
 	unsigned int index = 0;
-	int ret = 0;
+	int ret;
 
 	if (comp == NULL)
 		return;
 
-	if (comp->larb_dev)
+	if (comp->larb_dev) {
 #ifdef MTK_SMI_CLK_CTRL
 		ret = mtk_smi_larb_get(comp->larb_dev);
+		if (ret)
+			DDPPR_ERR("mtk_smi_larb_get failed:%d\n", ret);
 #else
-		ret = pm_runtime_get_sync(comp->dev);
+		pm_runtime_get_sync(comp->dev);
 #endif
-
-	if (ret)
-		DDPPR_ERR("larb or pm_runtime get fail:%s\n", mtk_dump_comp_str(comp));
+	}
 
 	if (comp->clk) {
 		ret = clk_prepare_enable(comp->clk);
@@ -949,7 +943,7 @@ void mtk_ddp_comp_clk_unprepare(struct mtk_ddp_comp *comp)
 void mtk_ddp_comp_iommu_enable(struct mtk_ddp_comp *comp,
 			       struct cmdq_pkt *handle)
 {
-	int port = 0, index, ret;
+	int port, index, ret;
 	struct resource res;
 	struct mtk_drm_private *priv;
 
@@ -1632,7 +1626,12 @@ void mt6983_mtk_sodi_config(struct drm_device *drm, enum mtk_ddp_comp_id id,
 
 	if (handle == NULL) {
 		unsigned int v;
-
+		/*
+		 * v = (readl(priv->config_regs + MMSYS_SODI_REQ_MASK)
+		 *	 & (~sodi_req_mask));
+		 * v += (sodi_req_val & sodi_req_mask);
+		 */
+		/* TODO: HARD CODE for RDMA0 scenario */
 		v = 0xF500;
 		writel_relaxed(v, priv->config_regs + MMSYS_SODI_REQ_MASK);
 		writel_relaxed(0x7, priv->config_regs + MMSYS_DUMMY0);

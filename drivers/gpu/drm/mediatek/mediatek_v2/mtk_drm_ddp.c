@@ -7865,7 +7865,6 @@ static int mtk_ddp_mout_en_MT6983(const struct mtk_mmsys_reg_data *data,
 		next == DDP_COMPONENT_WDMA2)) {
 		*addr = MT6983_DISP_SPR0_MOUT_EN;
 		value = DISP_SPR0_MOUT_EN_TO_DISP_WDMA0_SEL_IN;
-	/* MT6983 OVL0_2l is OVL1_2L actually */
 	} else if ((cur == DDP_COMPONENT_OVL0_2L &&
 		next == DDP_COMPONENT_OVL0_2L_VIRTUAL0) ||
 		(cur == DDP_COMPONENT_OVL2_2L &&
@@ -7896,12 +7895,6 @@ static int mtk_ddp_mout_en_MT6983(const struct mtk_mmsys_reg_data *data,
 		next == DDP_COMPONENT_RDMA3)) {
 		*addr = MT6983_DISP_OVL0_2L_NWCG_MOUT_EN;
 		value = DISP_OVL0_2L_NWCG_MOUT_EN_TO_DISP_RDMA1_SEL_IN;
-	/* aply this statements when real OVL0_2L is used */
-	/*} else if (cur == DDP_COMPONENT_OVL0_2L &&
-		next == DDP_COMPONENT_OVL0_2L_VIRTUAL0) {
-		*addr = MT6983_MMSYS_OVL_CON;
-		value = DISP_OVL0_2L_TO_DISP_OVL0_2L_BLEND_MOUT;
-	*/
 	} else if ((cur == DDP_COMPONENT_OVL0_2L_VIRTUAL0 &&
 		next == DDP_COMPONENT_DLO_ASYNC3) ||
 		(cur == DDP_COMPONENT_OVL2_2L_VIRTUAL0 &&
@@ -8259,7 +8252,6 @@ static int mtk_ddp_mout_en_MT6895(const struct mtk_mmsys_reg_data *data,
 		(cur == DDP_COMPONENT_RSZ1 && next == DDP_COMPONENT_OVL1)) {
 		*addr = MT6895_DISP_RSZ0_MOUT_EN;
 		value = MT6895_DISP_RSZ0_MOUT_EN_TO_DISP_RSZ0_MAIN_OVL_SOUT_SEL;
-	/* for mt6895 rsz path */
 	} else if ((cur == DDP_COMPONENT_OVL0_2L_NWCG_VIRTUAL0 &&
 		next == DDP_COMPONENT_RDMA1) ||
 		(cur == DDP_COMPONENT_OVL2_2L_NWCG_VIRTUAL0 &&
@@ -8370,7 +8362,6 @@ static int mtk_ddp_sel_in_MT6895(const struct mtk_mmsys_reg_data *data,
 		(cur == DDP_COMPONENT_RDMA3 && next == DDP_COMPONENT_SUB1_VIRTUAL1)) {
 		*addr = MT6895_DISP_DP_INTF0_SEL_IN;
 		value = MT6895_DISP_DP_INTF0_SEL_IN_FROM_DISP_RDMA1_SOUT_SEL;
-	/* for mt6895 rsz path */
 	} else if ((cur == DDP_COMPONENT_OVL0_2L_NWCG_VIRTUAL0 &&
 		next == DDP_COMPONENT_RDMA1) || (cur == DDP_COMPONENT_OVL2_2L_NWCG_VIRTUAL0 &&
 		next == DDP_COMPONENT_RDMA3)) {
@@ -9157,6 +9148,10 @@ static int mtk_ddp_mout_en_MT6879(const struct mtk_mmsys_reg_data *data,
 		next == DDP_COMPONENT_MAIN_OVL_DISP_WDMA_VIRTUAL) {
 		*addr = MT6879_DISP_OVL0_BLEND_MOUT_EN;
 		value = MT6879_DISP_OVL0_MOUT_TO_DISP_MAIN_OVL_DISP_WDMA_SEL;
+	}  else if (cur == DDP_COMPONENT_OVL0_2L &&
+		next == DDP_COMPONENT_RSZ0) {
+		*addr = MT6879_DISP_OVL0_2L_BLEND_MOUT_EN;
+		value = MT6879_DISP_OVL0_2L_MOUT_TO_DISP_RSZ0_SEL;
 	} else if (cur == DDP_COMPONENT_RSZ0 &&
 		next == DDP_COMPONENT_OVL0) {
 		*addr = MT6879_DISP_RSZ0_MOUT_EN;
@@ -11643,21 +11638,12 @@ void mtk_disp_mutex_put(struct mtk_disp_mutex *mutex)
 
 int mtk_disp_mutex_prepare(struct mtk_disp_mutex *mutex)
 {
-	int ret = 0;
 	struct mtk_ddp *ddp =
 		container_of(mutex, struct mtk_ddp, mutex[mutex->id]);
 
 	if (ddp->dispsys_num > 1)
-		ret = clk_prepare_enable(ddp->side_clk);
-	if (ret < 0)
-		DDPPR_ERR("%s prepare_enable side clk fail\n", __func__);
-
-	ret = clk_prepare_enable(ddp->clk);
-
-	if (ret < 0)
-		DDPPR_ERR("%s prepare_enable clk fail\n", __func__);
-
-	return ret;
+		clk_prepare_enable(ddp->side_clk);
+	return clk_prepare_enable(ddp->clk);
 }
 
 void mtk_disp_mutex_unprepare(struct mtk_disp_mutex *mutex)
@@ -12692,8 +12678,8 @@ void mutex_dump_analysis_mt6873(struct mtk_disp_mutex *mutex)
 			      mtk_ddp_get_mutex_sof_name(
 				      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_EOF, val)),
 			      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_SOF_WAIT, val));
-		if (len >= 0)
-			p += len;
+
+		p += len;
 		for (j = 0; j < 32; j++) {
 			unsigned int regval = readl_relaxed(
 				ddp->regs + DISP_REG_MUTEX_MOD(ddp->data, i));
@@ -12701,8 +12687,7 @@ void mutex_dump_analysis_mt6873(struct mtk_disp_mutex *mutex)
 			if ((regval & (1 << j))) {
 				len = sprintf(p, "%s,",
 					ddp_get_mutex_module0_name_mt6873(j));
-				if (len >= 0)
-					p += len;
+				p += len;
 			}
 		}
 		DDPDUMP("%s)\n", mutex_module);
@@ -12831,21 +12816,14 @@ void mutex_dump_analysis_mt6879(struct mtk_disp_mutex *mutex)
 				      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_EOF, val)),
 			      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_SOF_WAIT, val));
 
-		if (len >= 0)
-			p += len;
+		p += len;
 		mod0 = readl_relaxed(ddp->regs +
 			DISP_REG_MUTEX_MOD(ddp->data, i));
 		for (j = 0; j < 32; j++) {
 			if ((mod0 & (1 << j))) {
 				len = sprintf(p, "%s,",
 					ddp_get_mutex_module0_name_mt6879(j));
-				if (len < 0) {
-					DDPPR_ERR("%s:%d sprintf fail %d\n",
-							__func__, __LINE__, len);
-					continue;
-				}
-				if (len >= 0)
-					p += len;
+				p += len;
 			}
 		}
 
@@ -12855,8 +12833,7 @@ void mutex_dump_analysis_mt6879(struct mtk_disp_mutex *mutex)
 			if ((mod1 & (1 << j))) {
 				len = sprintf(p, "%s,",
 					ddp_get_mutex_module1_name_mt6879(j));
-				if (len >= 0)
-					p += len;
+				p += len;
 			}
 		}
 		DDPDUMP("%s)\n", mutex_module);
@@ -12893,10 +12870,7 @@ void mutex_dump_analysis_mt6855(struct mtk_disp_mutex *mutex)
 			      mtk_ddp_get_mutex_sof_name(
 				      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_EOF, val)),
 			      REG_FLD_VAL_GET(SOF_FLD_MUTEX0_SOF_WAIT, val));
-		if (len < 0) {
-			DDPPR_ERR("%s:%d sprintf fail %d\n", __func__, __LINE__, len);
-			continue;
-		}
+
 		p += len;
 		mod0 = readl_relaxed(ddp->regs +
 			DISP_REG_MUTEX_MOD(ddp->data, i));
@@ -12904,11 +12878,6 @@ void mutex_dump_analysis_mt6855(struct mtk_disp_mutex *mutex)
 			if ((mod0 & (1 << j))) {
 				len = sprintf(p, "%s,",
 					ddp_get_mutex_module0_name_mt6855(j));
-				if (len < 0) {
-					DDPPR_ERR("%s:%d sprintf fail %d\n",
-							__func__, __LINE__, len);
-					continue;
-				}
 				p += len;
 			}
 		}
@@ -12919,11 +12888,6 @@ void mutex_dump_analysis_mt6855(struct mtk_disp_mutex *mutex)
 			if ((mod1 & (1 << j))) {
 				len = sprintf(p, "%s,",
 					ddp_get_mutex_module1_name_mt6855(j));
-				if (len < 0) {
-					DDPPR_ERR("%s:%d sprintf fail %d\n",
-							__func__, __LINE__, len);
-					continue;
-				}
 				p += len;
 			}
 		}
@@ -13206,8 +13170,7 @@ void mmsys_config_dump_analysis_mt6885(void __iomem *config_regs)
 			else
 				len = sprintf(pos, "%s,", "n");
 
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			if ((ready[idx] & (1 << bit)))
 				len = sprintf(pos, "%s", "r");
@@ -13217,8 +13180,7 @@ void mmsys_config_dump_analysis_mt6885(void __iomem *config_regs)
 				pos += len;
 
 			len = sprintf(pos, ": %s", name);
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			DDPDUMP("%s\n", clock_on);
 		}
@@ -13244,8 +13206,7 @@ void mmsys_config_dump_analysis_mt6885(void __iomem *config_regs)
 
 void mmsys_config_dump_analysis_mt6983(void __iomem *config_regs)
 {
-	unsigned int idx = 0, bit = 0;
-	int len = 0;
+	unsigned int idx = 0, bit = 0, len = 0;
 	unsigned int reg = 0;
 	char clock_on[512] = {'\0'};
 	char *pos = NULL;
@@ -13324,19 +13285,16 @@ void mmsys_config_dump_analysis_mt6983(void __iomem *config_regs)
 			else
 				len = sprintf(pos, "%s,", "n");
 
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			if ((ready[idx] & (1 << bit)))
 				len = sprintf(pos, "%s", "r");
 			else
 				len = sprintf(pos, "%s", "n");
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			len = sprintf(pos, ": %s", name);
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			if ((valid[idx] & (1 << bit)) | (ready[idx] & (1 << bit)))
 				DDPDUMP("%s\n", clock_on);
@@ -13392,8 +13350,7 @@ void mmsys_config_dump_analysis_mt6983(void __iomem *config_regs)
 
 void mmsys_config_dump_analysis_mt6895(void __iomem *config_regs)
 {
-	unsigned int idx = 0, bit = 0;
-	int len = 0;
+	unsigned int idx = 0, bit = 0, len = 0;
 	unsigned int reg = 0;
 	char clock_on[512] = {'\0'};
 	char *pos = NULL;
@@ -13472,19 +13429,16 @@ void mmsys_config_dump_analysis_mt6895(void __iomem *config_regs)
 			else
 				len = sprintf(pos, "%s,", "n");
 
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			if ((ready[idx] & (1 << bit)))
 				len = sprintf(pos, "%s", "r");
 			else
 				len = sprintf(pos, "%s", "n");
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			len = sprintf(pos, ": %s", name);
-			if (len >= 0)
-				pos += len;
+			pos += len;
 
 			if ((valid[idx] & (1 << bit)) | (ready[idx] & (1 << bit)))
 				DDPDUMP("%s\n", clock_on);
@@ -13866,8 +13820,7 @@ void mmsys_config_dump_analysis_mt6853(void __iomem *config_regs)
 
 void mmsys_config_dump_analysis_mt6833(void __iomem *config_regs)
 {
-	unsigned int i = 0;
-	int len = 0;
+	unsigned int i = 0, len = 0;
 	unsigned int reg = 0;
 	char clock_on[512] = {'\0'};
 	char *pos = NULL;
@@ -13912,19 +13865,16 @@ void mmsys_config_dump_analysis_mt6833(void __iomem *config_regs)
 			len = sprintf(pos, "%s,", "v");
 		else
 			len = sprintf(pos, "%s,", "n");
-		if (len >= 0)
-			pos += len;
+		pos += len;
 
 		if ((ready & (1 << i)))
 			len = sprintf(pos, "%s", "r");
 		else
 			len = sprintf(pos, "%s", "n");
-		if (len >= 0)
-			pos += len;
+		pos += len;
 
 		len = sprintf(pos, ": %s", name);
-		if (len >= 0)
-			pos += len;
+		pos += len;
 
 		DDPDUMP("%s\n", clock_on);
 	}

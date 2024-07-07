@@ -12,7 +12,11 @@
 
 #define RT_MAX_NUM 10
 #define ESD_CHECK_NUM 3
+#if IS_ENABLED(CONFIG_DRM_PANEL_MCD_COMMON)
+#define MAX_TX_CMD_NUM 32
+#else
 #define MAX_TX_CMD_NUM 20
+#endif
 #define MAX_RX_CMD_NUM 20
 #define READ_DDIC_SLOT_NUM 4
 #define MAX_DYN_CMD_NUM 20
@@ -22,7 +26,7 @@ struct mtk_dsi;
 struct cmdq_pkt;
 struct mtk_panel_para_table {
 	u8 count;
-	u8 para_list[64];
+	u8 para_list[510];
 };
 
 /*
@@ -373,6 +377,9 @@ struct msync_cmd_table {
 };
 
 struct mtk_panel_params {
+#if IS_ENABLED(CONFIG_DRM_PANEL_MCD_COMMON)
+	struct drm_panel *drm_panel;
+#endif
 	unsigned int pll_clk;
 	unsigned int data_rate;
 	struct mtk_dsi_phy_timcon phy_timcon;
@@ -427,6 +434,8 @@ struct mtk_panel_params {
 
 	struct mtk_panel_cm_params cm_params;
 	struct mtk_panel_spr_params spr_params;
+
+	bool disable_rdma_underflow;
 };
 
 struct mtk_panel_ext {
@@ -448,6 +457,12 @@ enum mtk_lcm_version {
 };
 
 struct mtk_panel_funcs {
+#if IS_ENABLED(CONFIG_DRM_PANEL_MCD_COMMON)
+	int (*set_power)(struct drm_panel *panel, int power);
+#endif
+#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
+	int (*set_panel_lock)(struct drm_panel *panel, int lock);
+#endif
 	int (*set_backlight_cmdq)(void *dsi_drv, dcs_write_gce cb,
 		void *handle, unsigned int level);
 	int (*set_aod_light_mode)(void *dsi_drv, dcs_write_gce cb,
@@ -531,6 +546,7 @@ struct mtk_panel_funcs {
 
 	int (*hbm_set_cmdq)(struct drm_panel *panel, void *dsi_drv,
 			    dcs_write_gce cb, void *handle, bool en);
+	int (*hbm_set_lcm_cmdq)(struct drm_panel *panel, bool en);
 	void (*hbm_get_state)(struct drm_panel *panel, bool *state);
 	void (*hbm_get_wait_state)(struct drm_panel *panel, bool *wait);
 	bool (*hbm_set_wait_state)(struct drm_panel *panel, bool wait);
@@ -540,6 +556,7 @@ struct mtk_panel_funcs {
 
 	int (*send_ddic_cmd_pack)(struct drm_panel *panel,
 		void *dsi_drv, dcs_write_gce_pack cb, void *handle);
+	int (*set_disp_on_cmdq)(struct drm_panel *panel);
 };
 
 void mtk_panel_init(struct mtk_panel_ctx *ctx);

@@ -461,7 +461,7 @@ static void setup_nv12(struct mml_submit *task, struct mml_test_case *cur)
 		cur->size_in)
 		mml_err("%s case %d src size total %u plane %u %u",
 			__func__, mml_case, cur->size_in,
-			task->buffer.src.size[0], task->buffer.src.size[1]);
+			task->buffer.src.size[0] + task->buffer.src.size[1]);
 
 	/* check dest 0 with 2 plane size */
 	if (task->buffer.dest[0].size[0] + task->buffer.dest[0].size[1] !=
@@ -1250,7 +1250,7 @@ static ssize_t test_write(struct file *filp, const char *buf, size_t count,
 	loff_t *offp)
 {
 	struct mml_test *test = (struct mml_test *)filp->f_inode->i_private;
-	struct mml_test_case cur = {0};
+	struct mml_test_case cur;
 
 	if (count > sizeof(cur)) {
 		mml_err("buf count not match %zu %zu", count, sizeof(cur));
