@@ -179,6 +179,37 @@ void mrdump_regist_hang_bt(void (*fn)(void))
 }
 EXPORT_SYMBOL_GPL(mrdump_regist_hang_bt);
 
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+/*******************************************************
+    Module loading order for SEC_DEBUG
+
+    < ko_order_table.csv >
+	sec_deub.ko 
+	mrdump.ko
+	...
+	mtk-pmic-keys.ko
+	sec_reboot.ko
+	sec_rst.ko
+	sec_ext.ko
+*******************************************************/
+
+extern void sec_debug_dump_info(struct pt_regs *regs);
+#if IS_ENABLED(CONFIG_SEC_DEBUG_EXTRA_INFO)		
+extern void sec_debug_set_extra_info_fault(unsigned long addr, struct pt_regs *regs);
+#endif		
+
+static void (*reset_delay)(void);
+void register_mrdump_reset_delay(void (*func)(void))
+{
+	if (!func)
+		return;
+
+	reset_delay = func;
+	pr_info("%s done!\n", __func__);
+}
+EXPORT_SYMBOL(register_mrdump_reset_delay);
+#endif
+
 static int num_die;
 atomic_t first_cpu = ATOMIC_INIT(-1);
 int mrdump_common_die(int reboot_reason, const char *msg,
@@ -262,6 +293,17 @@ int mrdump_common_die(int reboot_reason, const char *msg,
 	case AEE_FIQ_STEP_COMMON_DIE_DONE:
 		aee_rr_rec_fiq_step(AEE_FIQ_STEP_COMMON_DIE_DONE);
 	default:
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+		sec_debug_dump_info(regs);
+
+#if IS_ENABLED(CONFIG_SEC_DEBUG_EXTRA_INFO)		
+ 	if (!user_mode(regs))
+		sec_debug_set_extra_info_fault((unsigned long)regs->pc, regs);
+#endif		
+
+		if (reset_delay)
+			reset_delay();
+#endif
 		aee_nested_printf("num_die-%d, last_step-%d, next_step-%d\n",
 				  num_die, last_step, next_step);
 		aee_exception_reboot(reboot_reason);
@@ -272,9 +314,16 @@ int mrdump_common_die(int reboot_reason, const char *msg,
 }
 EXPORT_SYMBOL(mrdump_common_die);
 
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+extern void sec_upload_cause(void *buf);
+#endif
+
 int ipanic(struct notifier_block *this, unsigned long event, void *ptr)
 {
 	crash_setup_regs(&saved_regs, NULL);
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+	sec_upload_cause(ptr);
+#endif
 	return mrdump_common_die(AEE_REBOOT_MODE_KERNEL_PANIC,
 				 "Kernel Panic", &saved_regs);
 }
@@ -282,6 +331,9 @@ int ipanic(struct notifier_block *this, unsigned long event, void *ptr)
 static int ipanic_die(struct notifier_block *self, unsigned long cmd, void *ptr)
 {
 	struct die_args *dargs = (struct die_args *)ptr;
+#if IS_ENABLED(CONFIG_SEC_DEBUG)
+	sec_upload_cause((void *)(dargs->str));
+#endif
 	return mrdump_common_die(AEE_REBOOT_MODE_KERNEL_OOPS,
 				 "Kernel Oops", dargs->regs);
 }
