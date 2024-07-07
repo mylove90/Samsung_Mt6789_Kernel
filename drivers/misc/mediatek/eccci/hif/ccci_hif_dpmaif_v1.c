@@ -41,7 +41,7 @@
 #include <linux/tcp.h>
 #include <linux/ipv6.h>
 #include <net/ipv6.h>
-
+#include <linux/suspend.h>
 
 
 #ifdef PIT_USING_CACHE_MEM
@@ -181,6 +181,7 @@ static int dpmaif_wait_resume_done(void)
 			CCCI_NORMAL_LOG(-1, TAG,
 				"[%s] warning: suspend_flag = 1; (cnt: %d)",
 				__func__, cnt);
+			pm_system_wakeup();
 			return -1;
 		}
 	}
@@ -3442,6 +3443,7 @@ static int dpmaif_bat_init(struct dpmaif_bat_request *bat_req,
 {
 	int sw_buf_size = buf_type ? sizeof(struct dpmaif_bat_page_t) :
 		sizeof(struct dpmaif_bat_skb_t);
+	int retry = 0;
 
 	bat_req->bat_size_cnt = DPMAIF_DL_BAT_ENTRY_SIZE;
 	bat_req->skb_pkt_cnt = bat_req->bat_size_cnt;
@@ -3463,10 +3465,16 @@ static int dpmaif_bat_init(struct dpmaif_bat_request *bat_req,
 	CCCI_HISTORY_LOG(-1, TAG, "bat dma_pool_alloc\n");
 #endif
 #endif
-	/* alloc buffer for AP SW to record skb information */
 
-	bat_req->bat_skb_ptr = kzalloc((bat_req->skb_pkt_cnt *
-		sw_buf_size), GFP_KERNEL);
+	/* alloc buffer for AP SW to record skb information */
+	for (retry = 0; retry < 5; retry++) {
+		bat_req->bat_skb_ptr = kzalloc((bat_req->skb_pkt_cnt *
+			sw_buf_size), GFP_KERNEL|__GFP_RETRY_MAYFAIL);
+		if (bat_req->bat_skb_ptr)
+			break;
+		CCCI_ERROR_LOG(-1, TAG, "alloc PIT memory fail retry%d\n", retry);
+	}
+
 	if (bat_req->bat_base == NULL || bat_req->bat_skb_ptr == NULL) {
 		CCCI_ERROR_LOG(-1, TAG, "bat request fail\n");
 		return LOW_MEMORY_BAT;
@@ -3479,6 +3487,9 @@ static int dpmaif_bat_init(struct dpmaif_bat_request *bat_req,
 static int dpmaif_rx_buf_init(struct dpmaif_rx_queue *rxq)
 {
 	int ret = 0;
+#ifdef PIT_USING_CACHE_MEM
+	int retry;
+#endif
 
 	/* PIT buffer init */
 	rxq->pit_size_cnt = DPMAIF_DL_PIT_ENTRY_SIZE;
@@ -3505,8 +3516,15 @@ static int dpmaif_rx_buf_init(struct dpmaif_rx_queue *rxq)
 	}
 #else
 	CCCI_BOOTUP_LOG(-1, TAG, "Using cacheable PIT memory\r\n");
-	rxq->pit_base = kmalloc((rxq->pit_size_cnt
-			* sizeof(struct dpmaifq_normal_pit)), GFP_KERNEL);
+
+	for (retry = 0; retry < 5; retry++) {
+		rxq->pit_base = kmalloc((rxq->pit_size_cnt
+			* sizeof(struct dpmaifq_normal_pit)), GFP_KERNEL|__GFP_RETRY_MAYFAIL);
+		if (rxq->pit_base)
+			break;
+		CCCI_ERROR_LOG(-1, TAG, "alloc PIT memory fail %d\n", retry);
+	}
+
 	if (!rxq->pit_base) {
 		CCCI_ERROR_LOG(-1, TAG, "alloc PIT memory fail\r\n");
 		return LOW_MEMORY_PIT;
@@ -3679,6 +3697,7 @@ static int dpmaif_rxq_init(struct dpmaif_rx_queue *queue)
 static int dpmaif_tx_buf_init(struct dpmaif_tx_queue *txq)
 {
 	int ret = 0;
+	int retry;
 
 	/* DRB buffer init */
 	txq->drb_size_cnt = DPMAIF_UL_DRB_ENTRY_SIZE;
@@ -3704,10 +3723,17 @@ static int dpmaif_tx_buf_init(struct dpmaif_tx_queue *txq)
 		return LOW_MEMORY_DRB;
 	}
 	memset(txq->drb_base, 0, DPMAIF_UL_DRB_SIZE);
+
 	/* alloc buffer for AP SW */
-	txq->drb_skb_base =
-		kzalloc((txq->drb_size_cnt * sizeof(struct dpmaif_drb_skb)),
-				GFP_KERNEL);
+	for (retry = 0; retry < 5; retry++) {
+		txq->drb_skb_base =
+			kzalloc((txq->drb_size_cnt * sizeof(struct dpmaif_drb_skb)),
+				GFP_KERNEL|__GFP_RETRY_MAYFAIL);
+		if (txq->drb_skb_base)
+			break;
+		CCCI_ERROR_LOG(-1, TAG, "drb skb buffer request fail,retry%d\n", retry);
+	}
+
 	if (txq->drb_skb_base == NULL) {
 		CCCI_ERROR_LOG(-1, TAG, "drb skb buffer request fail\n");
 		return LOW_MEMORY_DRB;
@@ -4620,6 +4646,10 @@ static int dpmaif_pre_stop(unsigned char hif_id)
 {
 	if (hif_id != DPMAIF_HIF_ID)
 		return -1;
+
+	if (dpmaif_ctrl->dpmaif_state == HIFDPMAIF_STATE_PWROFF
+		|| dpmaif_ctrl->dpmaif_state == HIFDPMAIF_STATE_MIN)
+		return 0;
 
 	dpmaif_stop_hw();
 
