@@ -35,6 +35,10 @@
 #include "ufs-mediatek.h"
 #include "ufs-mediatek-dbg.h"
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+#include "ufs-sec-feature.h"
+#endif
+
 #if IS_ENABLED(CONFIG_MTK_AEE_FEATURE)
 #include <mt-plat/aee.h>
 static int ufs_abort_aee_count;
@@ -1631,8 +1635,10 @@ static int ufs_mtk_init(struct ufs_hba *hba)
 	/* Enable inline encryption */
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
+#if !IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
 	/* Enable WriteBooster */
 	hba->caps |= UFSHCD_CAP_WB_EN;
+#endif
 
 	hba->quirks |= UFSHCI_QUIRK_SKIP_MANUAL_WB_FLUSH_CTRL;
 	hba->vps->wb_flush_threshold = UFS_WB_BUF_REMAIN_PERCENT(80);
@@ -1745,6 +1751,7 @@ static int ufs_mtk_pwr_change_notify(struct ufs_hba *hba,
 				     struct ufs_pa_layer_attr *dev_req_params)
 {
 	int ret = 0;
+	struct ufs_mtk_host *host = ufshcd_get_variant(hba);
 
 	switch (stage) {
 	case PRE_CHANGE:
@@ -1752,6 +1759,7 @@ static int ufs_mtk_pwr_change_notify(struct ufs_hba *hba,
 					     dev_req_params);
 		break;
 	case POST_CHANGE:
+		host->skip_flush = false;
 		break;
 	default:
 		ret = -EINVAL;
@@ -1835,7 +1843,7 @@ static int ufs_mtk_post_link(struct ufs_hba *hba)
 	/* enable unipro clock gating feature */
 	ufs_mtk_cfg_unipro_cg(hba, true);
 
-	/* configure auto-hibern8 timer to 10ms */
+	/* configure auto-hibern8 timer to 5ms */
 	if (ufshcd_is_auto_hibern8_supported(hba)) {
 		hba->ahit = FIELD_PREP(UFSHCI_AHIBERN8_TIMER_MASK, 5) |
 			    FIELD_PREP(UFSHCI_AHIBERN8_SCALE_MASK, 3);
@@ -1871,6 +1879,18 @@ static int ufs_mtk_link_startup_notify(struct ufs_hba *hba,
 static int ufs_mtk_device_reset(struct ufs_hba *hba)
 {
 	struct arm_smccc_res res;
+	struct ufs_mtk_host *host = ufshcd_get_variant(hba);
+
+	/* guarantee device internal cache flush */
+	if (hba->eh_flags && !host->skip_flush) {
+		dev_info(hba->dev, "%s: Waiting for device internal cache flush\n",
+				__func__);
+		ssleep(2);
+		host->skip_flush = true;
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+		ufs_sec_check_hwrst_cnt();
+#endif
+	}
 
 #if defined(CONFIG_UFSFEATURE)
 	struct ufsf_feature *ufsf = ufs_mtk_get_ufsf(hba);
@@ -2033,6 +2053,19 @@ static int ufs_mtk_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 			goto fail;
 	}
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	/*
+	 * Change WB state to WB_OFF to default in resume sequence.
+	 * In system PM, the link is "link off state" or "hibern8".
+	 * In case of link off state,
+	 *	just reset the WB state because UFS device needs to setup link.
+	 * In Hibern8 state,
+	 *	wb_off reset and WB off are required.
+	 */
+	if (ufshcd_is_system_pm(pm_op))
+		ufs_sec_wb_force_off(hba);
+#endif
+
 	return 0;
 fail:
 	return ufshcd_link_recovery(hba);
@@ -2160,6 +2193,19 @@ static int ufs_mtk_apply_dev_quirks(struct ufs_hba *hba)
 
 	ufs_mtk_fix_regulators(hba);
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	/* check only at the first init */
+	if (!(hba->eh_flags || hba->pm_op_in_progress)) {
+		/* sec special features */
+		ufs_set_sec_features(hba);
+#if IS_ENABLED(CONFIG_SCSI_UFS_TEST_MODE)
+		dev_info(hba->dev, "UFS test mode enabled\n");
+#endif
+	}
+
+	ufs_sec_feature_config(hba);
+#endif
+
 	return 0;
 }
 
@@ -2203,6 +2249,11 @@ static void ufs_mtk_fixup_dev_quirks(struct ufs_hba *hba)
 
 	ufs_mtk_install_tracepoints(hba);
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	/* register SEC vendor hooks */
+	ufs_sec_register_vendor_hooks();
+#endif
+
 #if defined(CONFIG_UFSFEATURE)
 	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG) {
 		host->ufsf.hba = hba;
@@ -2234,6 +2285,10 @@ static void ufs_mtk_event_notify(struct ufs_hba *hba,
 			__LINE__, DB_OPT_FS_IO_LOG,
 			"ufshcd_abort", "timeout at tag %d", val);
 	}
+#endif
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_op_err_check(hba, evt, data);
 #endif
 }
 
@@ -2343,6 +2398,9 @@ static int ufs_mtk_probe(struct platform_device *pdev)
 		goto out;
 	}
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_init_logging(dev);
+#endif
 skip_reset:
 	/* perform generic probe */
 	err = ufshcd_pltfrm_init(pdev, &ufs_hba_mtk_vops);
@@ -2394,6 +2452,10 @@ static int ufs_mtk_remove(struct platform_device *pdev)
 
 #if defined(CONFIG_UFSFEATURE)
 	ufs_mtk_remove_ufsf(hba);
+#endif
+
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_remove_features(hba);
 #endif
 
 	ufshcd_remove(hba);
@@ -2518,6 +2580,9 @@ void ufs_mtk_shutdown(struct platform_device *pdev)
 		ufsf_suspend(ufsf);
 #endif
 
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
+	ufs_sec_print_err_info(hba);
+#endif
 	/*
 	 * Quiesce all SCSI devices to prevent any non-PM requests sending
 	 * from block layer during and after shutdown.

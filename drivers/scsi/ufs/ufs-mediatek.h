@@ -224,6 +224,7 @@ struct ufs_mtk_host {
 	bool qos_enabled;
 	bool boot_device;
 	struct ufs_vreg *vcc;
+	bool skip_flush;
 
 	struct semaphore rpmb_sem;
 #if defined(CONFIG_UFSFEATURE)
