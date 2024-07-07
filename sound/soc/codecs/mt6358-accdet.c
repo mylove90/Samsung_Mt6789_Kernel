@@ -30,7 +30,9 @@
 #include <linux/mfd/mt6358/core.h>
 #include "mt6358-accdet.h"
 #include "mt6358.h"
-
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+#include "../samsung/sec_accdet_sysfs_cb.h"
+#endif
 /* grobal variable definitions */
 #define REGISTER_VAL(x)	(x - 1)
 #define HAS_CAP(_c, _x)	(((_c) & (_x)) == (_x))
@@ -56,6 +58,19 @@
 
 #define ACCDET_MOISTURE_DETECTED	BIT(15)
 
+/* for headset pole type definition  */
+#define TYPE_AB_00		(0x00)/* 3-pole or hook_switch */
+#define TYPE_AB_01		(0x01)/* 4-pole */
+#define TYPE_AB_11		(0x03)/* plug-out */
+#define TYPE_AB_10		(0x02)/* Illegal state */
+struct Vol_Set {/* mv */
+	unsigned int vol_min_3pole;
+	unsigned int vol_max_3pole;
+	unsigned int vol_min_4pole;
+	unsigned int vol_max_4pole;
+	unsigned int vol_bias;/* >2500: 2800; others: 2500 */
+};
+static struct Vol_Set cust_vol_set;
 #define RET_LT_5K			(-1)
 #define RET_GT_5K			(0)
 
@@ -165,11 +180,21 @@ static void delay_init_timerhandler(struct timer_list *t);
 #define MICBIAS_DISABLE_TIMER (6 * HZ)
 static struct timer_list micbias_timer;
 static void dis_micbias_timerhandler(struct timer_list *t);
+#define ACCDET_OPEN_CABLE_TIMER   (1 * HZ)
+static struct timer_list  accdet_open_cable_timer;
+static void check_open_cable_timerhandler(struct timer_list *t);
 static bool dis_micbias_done;
 static char accdet_log_buf[1280];
 static bool debug_thread_en;
 static bool dump_reg;
 static struct task_struct *thread;
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+static struct accdet_data accdet_pdata;
+#endif
+
+#define ACCDET_OPEN_CABLE_TIMER   (1 * HZ)
+static struct timer_list  accdet_open_cable_timer;
+static void check_open_cable_timerhandler(struct timer_list *t);
 
 static u32 button_press_debounce = 0x400;
 
@@ -181,6 +206,9 @@ static void config_eint_init_by_mode(void);
 static u32 get_triggered_eint(void);
 static void send_status_event(u32 cable_type, u32 status);
 static inline void accdet_eint_high_level_support(void);
+static inline void check_cable_type(void);
+static unsigned int check_pole_type(void);
+
 /* global function declaration */
 inline u32 accdet_read(u32 addr)
 {
@@ -693,14 +721,16 @@ static void accdet_get_efuse(void)
 		pr_info("%s internal moisture_vm=%d mv\n", __func__,
 			accdet->moisture_vm);
 	} else if (accdet_dts.moisture_use_ext_res == 0x1) {
-		accdet->moisture_vm = (2800 + accdet->moisture_vdd_offset);
-		accdet->moisture_vm = accdet->moisture_vm * accdet->water_r;
-		accdet->moisture_vm /=
-			(accdet->water_r + accdet->moisture_ext_r);
-		accdet->moisture_vm +=
-			(accdet->moisture_offset >> 1);
-		pr_info("%s external moisture_vm=%d mv\n", __func__,
-			accdet->moisture_vm);
+		if (accdet->moisture_vm == 0x0) {
+			accdet->moisture_vm = (2800 + accdet->moisture_vdd_offset);
+			accdet->moisture_vm = accdet->moisture_vm * accdet->water_r;
+			accdet->moisture_vm /=
+				(accdet->water_r + accdet->moisture_ext_r);
+			accdet->moisture_vm +=
+				(accdet->moisture_offset >> 1);
+			pr_info("%s external moisture_vm=%d mv\n", __func__,
+				accdet->moisture_vm);
+		}
 	}
 	pr_info("%s efuse=0x%x,auxadc_val=%dmv\n", __func__, efuseval,
 		accdet->auxadc_offset);
@@ -802,6 +832,9 @@ static void send_key_event(u32 keycode, u32 flag)
 				SND_JACK_BTN_3);
 		break;
 	}
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+	accdet_pdata.key_state = (flag) ? 1 : 0;
+#endif
 }
 
 static void send_status_event(u32 cable_type, u32 status)
@@ -869,12 +902,24 @@ static void send_status_event(u32 cable_type, u32 status)
 	default:
 		pr_info("%s Invalid cableType\n", __func__);
 	}
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+	if (status == 0)
+		accdet_pdata.jack_state = NO_DEVICE;
+	else
+		accdet_pdata.jack_state = cable_type;
+#endif
 }
 
 static void multi_key_detection(u32 cur_AB)
 {
 	if (cur_AB == ACCDET_STATE_AB_00)
 		accdet->cur_key = key_check(accdet->cali_voltage);
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+	if (cur_AB == ACCDET_STATE_AB_00)
+		accdet_pdata.mic_adc = accdet->cali_voltage;
+	else
+		accdet_pdata.mic_adc = 0;
+#endif
 
 	/* delay to fix side effect key when plug-out, when plug-out,seldom
 	 * issued AB=0 and Eint, delay to wait eint been flaged in register.
@@ -1154,6 +1199,16 @@ static void eint_work_callback(struct work_struct *work)
 				ACCDET_CMP_PWM_EN_SFT, 0x7, 0x7);
 
 		enable_accdet(0);
+
+		if (accdet_dts.no_use_comparator == 0x1) {
+			msleep(180);/* may be need delay more, relevant to Bias vol. */
+			check_cable_type();
+			if (accdet->accdet_status  == MIC_BIAS)
+				accdet->cali_voltage = accdet_get_auxadc();
+			mod_timer(&accdet_open_cable_timer,
+				jiffies + ACCDET_OPEN_CABLE_TIMER);
+		}
+
 	} else {
 		mutex_lock(&accdet->res_lock);
 		accdet->eint_sync_flag = false;
@@ -1212,12 +1267,37 @@ void accdet_set_debounce(int state, unsigned int debounce)
 	}
 }
 
+static unsigned int check_pole_type(void)
+{
+	unsigned int vol = 0;
+
+	vol = accdet_get_auxadc();
+	if ((vol < (cust_vol_set.vol_max_4pole + 1)) &&
+		(vol > (cust_vol_set.vol_min_4pole - 1))) {
+		pr_notice("[accdet] pole check:%d mv, AB=%d\n",
+			vol, TYPE_AB_01);
+		return TYPE_AB_01;
+	} else if ((vol < (cust_vol_set.vol_max_3pole + 1)) &&
+			(vol > cust_vol_set.vol_min_3pole)) {
+		pr_notice("[accdet] pole check:%d mv, AB=%d\n",
+			vol, TYPE_AB_00);
+		return TYPE_AB_00;
+	}
+	/* illegal state */
+	pr_notice("[accdet] pole check:%d mv, AB=%d\n", vol, TYPE_AB_10);
+	return TYPE_AB_10;
+}
+
 static inline void check_cable_type(void)
 {
 	u32 cur_AB = 0;
 
-	cur_AB = accdet_read(ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
+	if (accdet_dts.no_use_comparator == 0x1) {
+		cur_AB = check_pole_type();
+	} else {
+		cur_AB = accdet_read(ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
 		cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
+	}
 
 	accdet->button_status = 0;
 
@@ -1337,7 +1417,8 @@ static void accdet_work_callback(struct work_struct *work)
 
 	mutex_lock(&accdet->res_lock);
 	if (accdet->eint_sync_flag) {
-		if (pre_cable_type != accdet->cable_type)
+		if ((pre_cable_type != accdet->cable_type) ||
+			(accdet->cable_type == HEADSET_MIC))
 			send_status_event(accdet->cable_type, 1);
 	}
 	mutex_unlock(&accdet->res_lock);
@@ -1364,7 +1445,7 @@ static int pmic_eint_queue_work(int eintID)
 		if (eintID == PMIC_EINT0) {
 			if (accdet->cur_eint_state == EINT_PLUG_IN) {
 				accdet_set_debounce(eint_state000,
-						ACCDET_EINT0_DEB_IN_256);
+						ACCDET_EINT0_DEB_512);
 				accdet_set_debounce(accdet_state011,
 					cust_pwm_deb->debounce3);
 				accdet->cur_eint_state = EINT_PLUG_OUT;
@@ -1517,6 +1598,8 @@ void accdet_irq_handle(void)
 	eint_sts = accdet_read(ACCDET_EINT0_MEM_IN_ADDR);
 
 	if ((irq_status & ACCDET_IRQ_MASK_SFT) && (eintID == 0)) {
+		/* delete open cable timer if normal HP in */
+		del_timer_sync(&accdet_open_cable_timer);
 		clear_accdet_int();
 		accdet_queue_work();
 		clear_accdet_int_check();
@@ -1567,7 +1650,6 @@ void accdet_irq_handle(void)
 	} else {
 		pr_notice("%s no interrupt detected!\n", __func__);
 	}
-	dump_register();
 }
 
 static irqreturn_t mtk_accdet_irq_handler_thread(int irq, void *data)
@@ -1575,6 +1657,14 @@ static irqreturn_t mtk_accdet_irq_handler_thread(int irq, void *data)
 	accdet_irq_handle();
 
 	return IRQ_HANDLED;
+}
+static void check_open_cable_timerhandler(struct timer_list *t)
+{
+	int ret;
+
+	ret = queue_work(accdet->accdet_workqueue, &accdet->accdet_work);
+	if (!ret)
+		pr_info("%s return:%d!\n", __func__, ret);
 }
 
 static irqreturn_t ex_eint_handler(int irq, void *data)
@@ -1674,6 +1764,7 @@ static int accdet_get_dts_data(void)
 	struct device_node *node = NULL;
 	int pwm_deb[8] = {0};
 	int three_key[4] = {0};
+	unsigned int vol_thresh[5] = { 0 };
 	u32 tmp = 0;
 
 	node = of_find_matching_node(node, accdet_of_match);
@@ -1686,6 +1777,12 @@ static int accdet_get_dts_data(void)
 	ret = of_property_read_u32(node, "mediatek,accdet-pmic", &accdet_pmic);
 	if (ret)
 		accdet_pmic = 0x0;
+
+	ret = of_property_read_u32(node, "moisture-vm", &accdet->moisture_vm);
+	if (ret) {
+		/* moisture_vm threshold */
+		accdet->moisture_vm = 0x0;
+	}
 
 	ret = of_property_read_u32(node,
 			"accdet-mic-vol", &accdet_dts.mic_vol);
@@ -1788,6 +1885,34 @@ static int accdet_get_dts_data(void)
 					sizeof(struct three_key_threshold));
 	}
 	dis_micbias_done = false;
+
+	ret = of_property_read_u32(node, "no-use-comparator", &accdet_dts.no_use_comparator);
+	if (ret) {
+		/* use accdet comparator */
+		accdet_dts.no_use_comparator = 0x0;
+	}
+	pr_notice("accdet_dts.no_use_comparator = %d\n", accdet_dts.no_use_comparator);
+
+	if (accdet_dts.no_use_comparator == 0x1) {
+		ret = of_property_read_u32_array(node, "headset-vol-threshold",
+			vol_thresh, ARRAY_SIZE(vol_thresh));
+		if (!ret)
+			memcpy(&cust_vol_set, vol_thresh, sizeof(vol_thresh));
+		else
+			pr_info("accdet get headset-vol-thrsh fail\n");
+
+		pr_info("[Accdet] min_3pole = %d, max_3pole = %d\n",
+			cust_vol_set.vol_min_3pole, cust_vol_set.vol_max_3pole);
+		pr_info("[Accdet] min_4pole = %d, max_4pole = %d\n",
+			cust_vol_set.vol_min_4pole, cust_vol_set.vol_max_4pole);
+		if (cust_vol_set.vol_bias > 2600) {
+			cust_vol_set.vol_bias = 2600;/* 2600mv */
+			pr_notice("[Accdet]bias vol set %d mv--->2600 mv\n",
+					cust_vol_set.vol_bias);
+		} else {
+			pr_info("[Accdet]bias vol set %d mv\n", cust_vol_set.vol_bias);
+		}
+	}
 
 	ret = of_property_read_u32(node, "moisture-water-r", &accdet->water_r);
 	if (ret) {
@@ -1987,6 +2112,8 @@ static void accdet_init_once(void)
 	}
 	accdet_eint_high_level_support();
 
+	/* extend plug in debounce time to 512ms, default is 256ms */
+	accdet_set_debounce(eint_state000, ACCDET_EINT0_DEB_512);
 	/* accdet eint enable*/
 	accdet_write(0x250a, 0x4);
 
@@ -2073,7 +2200,7 @@ int mt6358_accdet_init(struct snd_soc_component *component,
 	}
 
 	accdet->jack.jack->input_dev->id.bustype = BUS_HOST;
-	snd_jack_set_key(accdet->jack.jack, SND_JACK_BTN_0, KEY_PLAYPAUSE);
+	snd_jack_set_key(accdet->jack.jack, SND_JACK_BTN_0, KEY_MEDIA);
 	snd_jack_set_key(accdet->jack.jack, SND_JACK_BTN_1, KEY_VOLUMEDOWN);
 	snd_jack_set_key(accdet->jack.jack, SND_JACK_BTN_2, KEY_VOLUMEUP);
 	snd_jack_set_key(accdet->jack.jack, SND_JACK_BTN_3, KEY_VOICECOMMAND);
@@ -2267,6 +2394,10 @@ static int mt6358_accdet_probe(struct platform_device *pdev)
 	micbias_timer.expires = jiffies + MICBIAS_DISABLE_TIMER;
 	timer_setup(&accdet_init_timer, delay_init_timerhandler, 0);
 	accdet_init_timer.expires = jiffies + ACCDET_INIT_WAIT_TIMER;
+	timer_setup(&accdet_open_cable_timer,
+			check_open_cable_timerhandler, 0);
+	accdet_open_cable_timer.expires = jiffies + ACCDET_OPEN_CABLE_TIMER;
+	/* the third argument may include TIMER_* flags */
 
 	/* Create workqueue */
 	accdet->delay_init_workqueue =
@@ -2315,6 +2446,10 @@ static int mt6358_accdet_probe(struct platform_device *pdev)
 	}
 	atomic_set(&accdet_first, 1);
 	mod_timer(&accdet_init_timer, (jiffies + ACCDET_INIT_WAIT_TIMER));
+
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+	register_accdet_jack_cb(&accdet_pdata);
+#endif
 	pr_info("%s done!\n", __func__);
 
 	return 0;

@@ -34,7 +34,9 @@ static const char *const mt6789_spk_type_str[] = {MTK_SPK_NOT_SMARTPA_STR,
 						  MTK_SPK_RICHTEK_RT5509_STR,
 						  MTK_SPK_MEDIATEK_MT6660_STR,
 						  MTK_SPK_RICHTEK_RT5512_STR,
-						  MTK_SPK_GOODIX_TFA98XX_STR};
+						  MTK_SPK_SILICON_SMA1305_STR,
+						  MTK_SPK_GOODIX_TFA98XX_STR,
+						  MTK_SPK_AWINIC_AW882XX_STR};
 static const char *const
 	mt6789_spk_i2s_type_str[] = {MTK_SPK_I2S_0_STR,
 				     MTK_SPK_I2S_1_STR,
@@ -482,6 +484,14 @@ SND_SOC_DAILINK_DEFS(hostless_fm,
 	DAILINK_COMP_ARRAY(COMP_CPU("Hostless FM DAI")),
 	DAILINK_COMP_ARRAY(COMP_DUMMY()),
 	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+SND_SOC_DAILINK_DEFS(hostless_fm_record,
+	DAILINK_COMP_ARRAY(COMP_CPU("Hostless_FM_Record DAI")),
+	DAILINK_COMP_ARRAY(COMP_DUMMY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+SND_SOC_DAILINK_DEFS(hostless_adda_dl_hwgain,
+	DAILINK_COMP_ARRAY(COMP_CPU("Hostless_ADDA_DL_HWGain DAI")),
+	DAILINK_COMP_ARRAY(COMP_DUMMY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()));
 SND_SOC_DAILINK_DEFS(hostless_speech,
 	DAILINK_COMP_ARRAY(COMP_CPU("Hostless Speech DAI")),
 	DAILINK_COMP_ARRAY(COMP_DUMMY()),
@@ -815,6 +825,26 @@ static struct snd_soc_dai_link mt6789_mt6366_dai_links[] = {
 		.dpcm_capture = 1,
 		.ignore_suspend = 1,
 		SND_SOC_DAILINK_REG(hostless_fm),
+	},
+	{
+		.name = "Hostless_FM_Record",
+		.stream_name = "Hostless_FM_Record",
+		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
+			    SND_SOC_DPCM_TRIGGER_PRE},
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.ignore_suspend = 1,
+		SND_SOC_DAILINK_REG(hostless_fm_record),
+	},
+	{
+		.name = "Hostless_ADDA_DL_HWGain",
+		.stream_name = "Hostless_ADDA_DL_HWGain",
+		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
+			    SND_SOC_DPCM_TRIGGER_PRE},
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.ignore_suspend = 1,
+		SND_SOC_DAILINK_REG(hostless_adda_dl_hwgain),
 	},
 	{
 		.name = "Hostless_Speech",
