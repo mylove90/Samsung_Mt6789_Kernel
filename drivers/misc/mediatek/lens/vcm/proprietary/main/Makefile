@@ -27,6 +27,21 @@ else
   subdir-ccflags-y += -I$(MTK_CUSTOM_PATH)/lens/vcm/proprietary/main/common/bu63169af/inc
 endif
 
+subdir-ccflags-y += -I$(MTK_CUSTOM_PATH)/imgsensor/inc
+subdir-ccflags-y += -I$(MTK_CUSTOM_PATH)/imgsensor/src/common/sysfs
+
+ifdef CONFIG_CAMERA_SAMSUNG_MODEL_NAME
+CAMERA_OIS_PROJECT_FOLDER := camera_project/$(subst ",,$(CONFIG_CAMERA_SAMSUNG_MODEL_NAME))
+else
+CAMERA_OIS_PROJECT_FOLDER := camera_project/default
+endif
+
+$(info CAMERA_OIS_PROJECT_FOLDER = $(CAMERA_OIS_PROJECT_FOLDER))
+subdir-ccflags-$(CONFIG_CAMERA_OIS) += -I$(MTK_CUSTOM_PATH)/lens/cam_ois/src/$(CAMERA_OIS_PROJECT_FOLDER)
+subdir-ccflags-$(CONFIG_CAMERA_OIS) += -I$(MTK_CUSTOM_PATH)/lens/cam_ois/inc
+subdir-ccflags-$(CONFIG_CAMERA_OIS) += -I$(MTK_CUSTOM_PATH)/lens/cam_ois/src
+
+
 obj-$(CONFIG_MTK_LENS)    += mainaf.o
 
 mainaf-y  += main_lens.o
@@ -45,6 +60,8 @@ mainaf-y  += common/dw9719taf/DW9719TAF.o
 mainaf-y  += common/dw9763af/DW9763AF.o
 mainaf-y  += common/dw9839af/DW9839AF.o
 mainaf-y  += common/gt9764af/GT9764AF.o
+mainaf-y  += common/gt9778af/GT9778AF.o
+mainaf-y  += common/dw9825af_ois_mcu/DW9825AF_OIS_MCU.o
 mainaf-y  += common/lc898212af/LC898212AF.o
 mainaf-y  += common/lc898212xdaf/LC898212XDAF.o
 mainaf-y  += common/lc898212xdaf/AfInter.o
@@ -67,3 +84,10 @@ mainaf-y  += common/bu63169af/OIS_main.o
 mainaf-y  += common/bu63169af/OIS_user.o
 mainaf-y  += common/bu64253gwzaf/BU64253GWZAF.o
 
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/$(CAMERA_OIS_PROJECT_FOLDER)/cam_ois_mcu_fw.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/$(CAMERA_OIS_PROJECT_FOLDER)/cam_ois_power.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/cam_ois_aois_if.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/cam_ois_sysfs.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/cam_ois.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/cam_ois_drv.o
+mainaf-$(CONFIG_CAMERA_OIS)  += ../../../cam_ois/src/cam_ois_i2c.o

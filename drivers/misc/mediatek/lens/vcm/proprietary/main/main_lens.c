@@ -34,6 +34,11 @@
 #include "lens_info.h"
 #include "lens_list.h"
 
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+#include "cam_ois.h"
+#include "cam_ois_drv.h"
+#endif
+
 #define AF_DRVNAME "MAINAF"
 
 #if defined(CONFIG_MTK_LEGACY)
@@ -114,6 +119,8 @@ static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	DW9800WAF_Release, DW9800WAF_GetFileName, NULL},
 	{1, AFDRV_DW9814AF, DW9814AF_SetI2Cclient, DW9814AF_Ioctl,
 	 DW9814AF_Release, DW9814AF_GetFileName, NULL},
+	{1, AFDRV_DW9825AF_OIS_MCU, DW9825AF_OIS_MCU_SetI2Cclient, DW9825AF_OIS_MCU_Ioctl,
+	 DW9825AF_OIS_MCU_Release, DW9825AF_OIS_MCU_GetFileName, NULL},
 	{1, AFDRV_DW9839AF, DW9839AF_SetI2Cclient, DW9839AF_Ioctl,
 	 DW9839AF_Release, DW9839AF_GetFileName, NULL},
 	{1, AFDRV_FP5510E2AF, FP5510E2AF_SetI2Cclient, FP5510E2AF_Ioctl,
@@ -122,6 +129,8 @@ static struct stAF_DrvList g_stAF_DrvList[MAX_NUM_OF_LENS] = {
 	 DW9718AF_Release, DW9718AF_GetFileName, NULL},
 	{1, AFDRV_GT9764AF, GT9764AF_SetI2Cclient, GT9764AF_Ioctl,
 	GT9764AF_Release, GT9764AF_GetFileName, NULL},
+	{1, AFDRV_GT9778AF, GT9778AF_SetI2Cclient, GT9778AF_Ioctl,
+	GT9778AF_Release, GT9778AF_GetFileName, NULL},
 	{1, AFDRV_LC898212AF, LC898212AF_SetI2Cclient, LC898212AF_Ioctl,
 	 LC898212AF_Release, LC898212AF_GetFileName, NULL},
 	{1, AFDRV_LC898214AF, LC898214AF_SetI2Cclient, LC898214AF_Ioctl,
@@ -163,6 +172,15 @@ static struct pinctrl_state *vcamaf_pio_off;
 #define CAMAF_PMIC     "camaf_m1_pmic"
 #define CAMAF_GPIO_ON  "camaf_m1_gpio_on"
 #define CAMAF_GPIO_OFF "camaf_m1_gpio_off"
+
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+static struct device *local_dev;
+static int ois_mcu_probe_set_af(struct i2c_client *i2c_client, spinlock_t *af_spinLock, int *af_opened,
+								const struct file_operations *af_op)
+{
+	return cam_ois_set_af_client(i2c_client, af_spinLock, af_opened, af_op);
+}
+#endif
 
 static void camaf_power_init(void)
 {
@@ -359,7 +377,7 @@ static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 		{
 	/* Set Driver Name */
 	int i;
-	struct stAF_MotorName stMotorName = {'\0'};
+	struct stAF_MotorName stMotorName;
 	struct stAF_DrvList *pstAF_CurDrv = NULL;
 	__user struct stAF_MotorName *pstMotorName =
 			(__user struct stAF_MotorName *)a_u4Param;
@@ -452,6 +470,12 @@ static long AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 				i4RetValue = g_pstAF_CurDrv->pAF_Ioctl(
 					a_pstFile, a_u4Command, a_u4Param);
 		}
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+		if ((!g_pstAF_CurDrv || !g_pstAF_CurDrv->pAF_Ioctl) && a_u4Command == AFIOC_S_SETPARA) {
+			LOG_INF("[cam_ois] fail to send IOCTL");
+			i4RetValue = -EAGAIN;
+		}
+#endif
 		break;
 	}
 
@@ -493,6 +517,11 @@ static int AF_Open(struct inode *a_pstInode, struct file *a_pstFile)
 	camaf_power_init();
 	camaf_power_on();
 
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	//For temporarily
+	cam_ois_power_on();
+	cam_ois_init();
+#endif
 	/* OIS/EIS Timer & Workqueue */
 	/* init work queue */
 	INIT_WORK(&ois_work, ois_pos_polling);
@@ -528,7 +557,9 @@ static int AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 	}
 
 	camaf_power_off();
-
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	cam_ois_power_off();
+#endif
 	/* OIS/EIS Timer & Workqueue */
 	/* Cancel Timer */
 	hrtimer_cancel(&ois_timer);
@@ -680,6 +711,15 @@ static int AF_i2c_probe(struct i2c_client *client,
 
 	spin_lock_init(&g_AF_SpinLock);
 
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	LOG_INF("OIS I2C E");
+
+	if (g_pstAF_I2Cclient && local_dev)
+		ois_mcu_probe_set_af(g_pstAF_I2Cclient, &g_AF_SpinLock, &g_s4AF_Opened, &g_stAF_fops);
+
+	LOG_INF("OIS I2C X");
+#endif
+
 	LOG_INF("Attached!!\n");
 
 	return 0;
@@ -687,7 +727,22 @@ static int AF_i2c_probe(struct i2c_client *client,
 
 static int AF_probe(struct platform_device *pdev)
 {
-	return i2c_add_driver(&AF_i2c_driver);
+	int ret = 0;
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	local_dev = &pdev->dev;
+#endif
+
+	ret = i2c_add_driver(&AF_i2c_driver);
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	LOG_INF("E");
+
+	if (g_pstAF_I2Cclient && local_dev)
+		ois_mcu_probe_set_af(g_pstAF_I2Cclient, &g_AF_SpinLock, &g_s4AF_Opened, &g_stAF_fops);
+
+	LOG_INF("X");
+#endif
+
+	return ret;
 }
 
 static int AF_remove(struct platform_device *pdev)
@@ -746,11 +801,18 @@ static int __init MAINAF_i2C_init(void)
 		return -ENODEV;
 	}
 
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	if (cam_ois_drv_init())
+		return -ENODEV;
+#endif
 	return 0;
 }
 
 static void __exit MAINAF_i2C_exit(void)
 {
+#if IS_ENABLED(CONFIG_CAMERA_OIS)
+	cam_ois_drv_exit();
+#endif
 	platform_driver_unregister(&g_stAF_Driver);
 	platform_device_unregister(&g_stAF_device);
 }
