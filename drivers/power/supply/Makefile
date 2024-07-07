@@ -5,7 +5,9 @@ subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/power_throttling
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 
 power_supply-y				:= power_supply_core.o
-power_supply-$(CONFIG_SYSFS)		+= power_supply_sysfs.o
+
+# power_supply-$(CONFIG_SYSFS)		+= power_supply_sysfs_ssdev.o
+power_supply-$(CONFIG_SYSFS)        += power_supply_sysfs.o
 power_supply-$(CONFIG_LEDS_TRIGGERS)	+= power_supply_leds.o
 
 obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
