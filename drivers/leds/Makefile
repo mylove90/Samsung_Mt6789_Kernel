@@ -102,6 +102,8 @@ obj-$(CONFIG_LEDS_REGULATOR_VIBRATOR)	+= regulator-vibrator.o
 obj-$(CONFIG_LEDS_MTK)			+= leds-mtk.o
 obj-$(CONFIG_LEDS_MTK_PWM)		+= leds-mtk-pwm.o
 obj-$(CONFIG_LEDS_MTK_DISP)		+= leds-mtk-disp.o
+obj-$(CONFIG_LEDS_SM5714)		+= leds-sm5714-fled.o
+obj-$(CONFIG_LEDS_S2MU106_FLASH)	+= leds-s2mu106.o
 
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/flashlight
 subdir-ccflags-y += -I$(srctree)/drivers/power/supply
@@ -117,3 +119,8 @@ obj-$(CONFIG_LEDS_USER)			+= uleds.o
 
 # LED Triggers
 obj-$(CONFIG_LEDS_TRIGGERS)		+= trigger/
+
+ifneq ($(CONFIG_LEDS_SM5714),)
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/imgsensor/inc \
+                    -I$(srctree)/drivers/misc/mediatek/imgsensor/src/common/sysfs
+endif
