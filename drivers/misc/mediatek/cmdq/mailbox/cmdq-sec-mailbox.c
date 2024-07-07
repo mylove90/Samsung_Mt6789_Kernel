@@ -905,8 +905,12 @@ static s32 cmdq_sec_fill_iwc_msg(struct cmdq_sec_context *context,
 	instr = &iwc_msg->command.pVABase[iwc_msg->command.commandSize / 4 - 4];
 	if (instr[0] == 0x1 && instr[1] == 0x40000000)
 		instr[0] = 0;
-	else
+	else if (instr[-2] == 0x1 && instr[-1] == 0x40000000)
+		instr[-2] = 0;
+	else {
 		cmdq_err("find EOC failed: %#x %#x", instr[1], instr[0]);
+		return -EFAULT;
+	}
 	iwc_msg->command.waitCookie = task->waitCookie;
 	iwc_msg->command.resetExecCnt = task->resetExecCnt;
 
@@ -1185,6 +1189,8 @@ cmdq_sec_task_submit(struct cmdq_sec *cmdq, struct cmdq_sec_task *task,
 
 	cmdq_log("task:%p iwc_cmd:%u cmdq:%p thrd-idx:%u tgid:%u",
 		task, iwc_cmd, cmdq, thrd_idx, current->tgid);
+	if (iwc_cmd != 4 && !task)
+		cmdq_err("iwc_cmd:%u data:%p task:%p", iwc_cmd, data, task);
 
 #if IS_ENABLED(CONFIG_MMPROFILE)
 	mmprofile_log_ex(cmdq->mmp.submit, MMPROFILE_FLAG_PULSE,
@@ -1233,6 +1239,10 @@ cmdq_sec_task_submit(struct cmdq_sec *cmdq, struct cmdq_sec_task *task,
 			pkt->rec_trigger = sched_clock();
 		err = cmdq_sec_session_send(
 			cmdq->context, task, iwc_cmd, thrd_idx, cmdq, mtee);
+
+		if (iwc_cmd != 4 && (!cmdq->context->mtee_iwc_msg || !task))
+			cmdq_err("iwc_cmd:%u mtee_iwc_msg:%p data:%p task:%p", iwc_cmd,
+				cmdq->context->mtee_iwc_msg, data, task);
 
 		if (err) {
 			cmdq_util_dump_lock();
