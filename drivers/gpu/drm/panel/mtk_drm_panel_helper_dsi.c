@@ -838,7 +838,8 @@ static void parse_lcm_dsi_fps_setting(struct device_node *np,
 int parse_lcm_params_dsi(struct device_node *np,
 		struct mtk_lcm_params_dsi *params)
 {
-	unsigned int i = 0, len = 0;
+	int len = 0;
+	unsigned int i = 0;
 	unsigned int default_mode = 0;
 	unsigned int flag[64] = { 0 };
 	u32 *mode = NULL;
@@ -966,7 +967,6 @@ int parse_lcm_params_dsi(struct device_node *np,
 	if (len != params->mode_count * MTK_LCM_MODE_UNIT) {
 		DDPMSG("%s: invalid dsi mode list, len:%d, count:%u",
 			__func__, len, params->mode_count);
-		kfree(mode);
 		return -EINVAL;
 	}
 	for (i = 0; i < params->mode_count; i++) {

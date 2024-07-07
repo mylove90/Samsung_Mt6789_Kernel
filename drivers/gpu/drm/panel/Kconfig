@@ -821,6 +821,50 @@ config DRM_PANEL_NT37801_MSYNC2_RTE
 	  and uses 24-bits RGB per pixel. It provides a MIPI DSI
 	  interface to host.
 
+config DRM_PANEL_NT36672C_S2DPS01_VDO
+	tristate "nt36672c fhdplus panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for nt36672c fhdplus
+	  panel. The panel has a 1080x2408 resolution
+	  and uses 24-bits RGB per pixel. It provides a MIPI DSI
+	  interface to host.
+
+config DRM_PANEL_S6E3FC3_S2DOS15_CMD
+	tristate "nt36672c fhdplus panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for s6e3fc3 fhdplus
+	  panel. The panel has a 1080x2408 resolution
+	  and uses 24-bits RGB per pixel. It provides a MIPI DSI
+	  interface to host.
+
+config DRM_PANEL_S6E3FC3_S2DOS15_CMD_2340
+	tristate "nt36672c fhdplus 2340 panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for s6e3fc3 fhdplus
+	  panel. The panel has a 1080x2340 resolution
+	  and uses 24-bits RGB per pixel. It provides a MIPI DSI
+	  interface to host.
+
+config DRM_PANEL_S6E8FC3_S2DOS15A01_VDO
+	tristate "s6e8fc3 vdo fhdplus 2340 panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for s6e3fc3 fhdplus
+	  panel. The panel has a 1080x2340 resolution
+	  and uses 24-bits RGB per pixel. It provides a MIPI DSI
+	  interface to host.
+
 config DRM_MEDIATEK_PANEL
 	tristate "drm panel common driver"
 	depends on OF

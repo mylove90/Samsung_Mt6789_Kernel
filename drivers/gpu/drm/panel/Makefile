@@ -86,6 +86,10 @@ obj-$(CONFIG_DRM_PANEL_SAMSUNG_S68FC01_VDO_AOD) += panel-samsung-s68fc01-vdo-aod
 obj-$(CONFIG_DRM_PANEL_ALPHA_SAMSUNG_S6E3HAE_CMD_120HZ) += panel-alpha-samsung-s6e3hae-wqhd-dphy-cmd-120hz.o
 obj-$(CONFIG_DRM_PANEL_TIANMA_NT36672C_CPHY_VDO_90HZ_RT4801) += panel-tianma-nt36672c-cphy-vdo-90hz-rt4801.o
 obj-$(CONFIG_DRM_PANEL_NT37801_MSYNC2_RTE) += panel-nt37801-msync2-rte.o
+obj-$(CONFIG_DRM_PANEL_NT36672C_S2DPS01_VDO) += panel-nt36672c-s2dps01-vdo.o
+obj-$(CONFIG_DRM_PANEL_S6E3FC3_S2DOS15_CMD) += panel-s6e3fc3-s2dos15-cmd.o
+obj-$(CONFIG_DRM_PANEL_S6E3FC3_S2DOS15_CMD_2340) += panel-s6e3fc3-s2dos15-cmd-2340.o
+obj-$(CONFIG_DRM_PANEL_S6E8FC3_S2DOS15A01_VDO) += panel-s6e8fc3-s2dos15a01-vdo.o
 
 mediatek-drm-gateic-y := mtk_drm_panel_i2c.o \
 		  mtk_drm_gateic_rt4801h.o \
