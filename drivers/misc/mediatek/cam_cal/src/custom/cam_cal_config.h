@@ -10,6 +10,7 @@
 #include "kd_imgsensor.h"
 #include "cam_cal_format.h"
 #include "eeprom_utils.h"
+#include "cam_cal_define.h"
 
 /*****************************************************************************
  * Structures
@@ -35,7 +36,7 @@ struct STRUCT_CAM_CAL_CONFIG_STRUCT {
 	const char *name;
 	unsigned int (*check_layout_function)(struct EEPROM_DRV_FD_DATA *pdata,
 				unsigned int sensorID);
-	unsigned int (*read_function)(struct i2c_client *client, unsigned int addr,
+	unsigned int (*read_function)(struct i2c_client *client, struct CAM_CAL_SENSOR_INFO sensor_info, unsigned int addr,
 				unsigned char *data, unsigned int size);
 	struct STRUCT_CALIBRATION_LAYOUT_STRUCT *layout;
 	unsigned int sensor_id;
