@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2019 MediaTek Inc.
+ * Copyright (c) 2022 MediaTek Inc.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": %s: " fmt, __func__
@@ -20,6 +20,12 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+#ifdef CONFIG_MTK_S2MU106_FLASHLIGHT
+#include <linux/leds-s2mu106.h>
+#endif
+#ifdef CONFIG_MTK_SM5714_FLASHLIGHT
+extern bool sm5714_is_fd_in_use(void);
+#endif
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
@@ -888,13 +894,21 @@ static int flashlight_release(struct inode *inode, struct file *file)
 	struct flashlight_dev *fdev;
 
 	mutex_lock(&fl_mutex);
-	list_for_each_entry(fdev, &flashlight_list, node) {
-		if (!fdev->ops)
-			continue;
+#ifdef CONFIG_MTK_S2MU106_FLASHLIGHT
+	if (!s2mu106_is_fd_in_use())
+#endif
+#ifdef CONFIG_MTK_SM5714_FLASHLIGHT
+	if (!sm5714_is_fd_in_use())
+#endif
+	{
+		list_for_each_entry(fdev, &flashlight_list, node) {
+			if (!fdev->ops)
+				continue;
 
-		pr_debug("Release(%d,%d,%d)\n", fdev->dev_id.type,
-				fdev->dev_id.ct, fdev->dev_id.part);
-		fdev->ops->flashlight_release();
+			pr_debug("Release(%d,%d,%d)\n", fdev->dev_id.type,
+					fdev->dev_id.ct, fdev->dev_id.part);
+			fdev->ops->flashlight_release();
+		}
 	}
 	mutex_unlock(&fl_mutex);
 
@@ -1950,4 +1964,3 @@ module_exit(flashlight_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Simon Wang <Simon-TCH.Wang@mediatek.com>");
 MODULE_DESCRIPTION("MTK Flashlight Core Driver");
-

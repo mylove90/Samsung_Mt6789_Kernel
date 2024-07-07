@@ -17,6 +17,8 @@ obj-$(CONFIG_MTK_FLASHLIGHT_MT6336)      += flashlights-mt6336.o
 obj-$(CONFIG_MTK_FLASHLIGHT_MT6370)      += flashlights-mt6370.o
 obj-$(CONFIG_MTK_FLASHLIGHT_MT6360)      += flashlights-mt6360.o
 obj-$(CONFIG_MTK_FLASHLIGHT_AW3644)      += flashlights-aw3644.o
+obj-$(CONFIG_MTK_S2MU106_FLASHLIGHT)     += flashlights-s2mu106.o
+obj-$(CONFIG_MTK_SM5714_FLASHLIGHT)      += flashlights-sm5714.o
 obj-$(CONFIG_MTK_FLASHLIGHT_DUMMY)       += flashlights-dummy.o
 obj-$(CONFIG_MTK_FLASHLIGHT_DUMMY_GPIO)  += flashlights-dummy-gpio.o
 
@@ -29,6 +31,10 @@ MTK_CUSTOM_PATH := $(srctree)/drivers/misc/mediatek
 
 ifeq ($(CONFIG_MTK_FLASHLIGHT_AW3644),y)
 ccflags-y += -DCONFIG_MTK_FLASHLIGHT_AW3644
+endif
+ifneq ($(CONFIG_MTK_S2MU106_FLASHLIGHT),)
+subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/imgsensor/inc \
+                    -I$(srctree)/drivers/misc/mediatek/imgsensor/src/common/sysfs
 endif
 subdir-ccflags-y += \
 	-I$(MTK_CUSTOM_PATH)/power_throttling
