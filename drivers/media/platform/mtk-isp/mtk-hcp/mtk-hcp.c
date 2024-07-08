@@ -378,11 +378,9 @@ int mtk_hcp_register(struct platform_device *pdev,
 			scp_ipi_registration(ipi_id, hcp_ipi_handler, name);
 		}
 #endif
-		unsigned int idx = (unsigned int)id;
-
-		hcp_dev->hcp_desc_table[idx].name = name;
-		hcp_dev->hcp_desc_table[idx].handler = handler;
-		hcp_dev->hcp_desc_table[idx].priv = priv;
+		hcp_dev->hcp_desc_table[id].name = name;
+		hcp_dev->hcp_desc_table[id].handler = handler;
+		hcp_dev->hcp_desc_table[id].priv = priv;
 		return 0;
 	}
 
@@ -1353,16 +1351,12 @@ static long mtk_hcp_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case HCP_GET_OBJECT:
 		(void)copy_from_user(&data, (void *)arg, sizeof(struct packet));
-		if (data.count > IPI_MAX_BUFFER_COUNT || data.count < 0) {
-			dev_info(hcp_dev->dev, "Get_OBJ # of buf:%d in cmd:%d exceed %u",
+		if (data.count > IPI_MAX_BUFFER_COUNT) {
+			dev_info(hcp_dev->dev, "Get_OBJ # of buf:%u in cmd:%d exceed %u",
 				data.count, cmd, IPI_MAX_BUFFER_COUNT);
 			return -EINVAL;
 		}
-		for (index = 0; index < IPI_MAX_BUFFER_COUNT; index++) {
-			if (index >= data.count) {
-				break;
-			}
-
+		for (index = 0; index < data.count; index++) {
 			if (data.buffer[index] == NULL) {
 				dev_info(hcp_dev->dev, "Get_OBJ buf[%u] is NULL", index);
 				return -EINVAL;
@@ -1562,10 +1556,10 @@ int allocate_working_buffer_helper(struct platform_device *pdev)
 					return -1;
 				}
 				mblock[id].start_virt = buf_ptr;
-				get_dma_buf(mblock[id].d_buf);
 				mblock[id].fd =
 				dma_buf_fd(mblock[id].d_buf,
 				O_RDWR | O_CLOEXEC);
+				dma_buf_get(mblock[id].fd);
 				break;
 			default:
 
@@ -1613,10 +1607,10 @@ int allocate_working_buffer_helper(struct platform_device *pdev)
 					return -1;
 				}
 				mblock[id].start_virt = buf_ptr;
-				get_dma_buf(mblock[id].d_buf);
 				mblock[id].fd =
 				dma_buf_fd(mblock[id].d_buf,
 				O_RDWR | O_CLOEXEC);
+				dma_buf_get(mblock[id].fd);
 				break;
 			}
 		} else {

@@ -364,7 +364,4 @@ struct mtk_cam_pde_info {
 #define V4L2_CID_VSYNC_NOTIFY \
 	(V4L2_CID_USER_MTK_SENINF_BASE + 3)
 
-#define V4L2_CID_UPDATE_SOF_CNT \
-	(V4L2_CID_USER_MTK_SENINF_BASE + 4)
-
 #endif /* __MTK_CAMERA_V4l2_CONTROLS_H */

@@ -78,17 +78,17 @@ void imgsys_cmdq_init(struct mtk_imgsys_dev *imgsys_dev, const int nr_imgsys_dev
 	switch (nr_imgsys_dev) {
 	case 1: /* DIP */
 		/* request thread by index (in dts) 0 */
-		for (idx = 0; idx < IMGSYS_NOR_THD; idx++) {
+		for (idx = 0; idx < IMGSYS_ENG_MAX; idx++) {
 			imgsys_clt[idx] = cmdq_mbox_create(dev, idx);
 			pr_info("%s: cmdq_mbox_create(%d, 0x%x)\n", __func__, idx, imgsys_clt[idx]);
 		}
 		#if IMGSYS_SECURE_ENABLE
 		/* request for imgsys secure gce thread */
-		for (idx = IMGSYS_NOR_THD; idx < (IMGSYS_NOR_THD + IMGSYS_SEC_THD); idx++) {
-			imgsys_sec_clt[idx-IMGSYS_NOR_THD] = cmdq_mbox_create(dev, idx);
+		for (idx = IMGSYS_ENG_MAX; idx < (IMGSYS_ENG_MAX + IMGSYS_SEC_THD); idx++) {
+			imgsys_sec_clt[idx-IMGSYS_ENG_MAX] = cmdq_mbox_create(dev, idx);
 			pr_info(
 				"%s: cmdq_mbox_create sec_thd(%d, 0x%x)\n",
-				__func__, idx, imgsys_sec_clt[idx-IMGSYS_NOR_THD]);
+				__func__, idx, imgsys_sec_clt[idx-IMGSYS_ENG_MAX]);
 		}
 		#endif
 		/* parse hardware event */
@@ -116,7 +116,7 @@ void imgsys_cmdq_release(struct mtk_imgsys_dev *imgsys_dev)
 	pr_info("%s: +\n", __func__);
 
 	/* Destroy cmdq client */
-	for (idx = 0; idx < IMGSYS_NOR_THD; idx++) {
+	for (idx = 0; idx < IMGSYS_ENG_MAX; idx++) {
 		cmdq_mbox_destroy(imgsys_clt[idx]);
 		imgsys_clt[idx] = NULL;
 	}
@@ -167,7 +167,7 @@ void imgsys_cmdq_streamoff(struct mtk_imgsys_dev *imgsys_dev)
 	is_stream_off = 1;
 
 	#if CMDQ_STOP_FUNC
-	for (idx = 0; idx < IMGSYS_NOR_THD; idx++) {
+	for (idx = 0; idx < IMGSYS_ENG_MAX; idx++) {
 		cmdq_mbox_stop(imgsys_clt[idx]);
 		dev_dbg(imgsys_dev->dev,
 			"%s: calling cmdq_mbox_stop(%d, 0x%x)\n",
@@ -698,6 +698,7 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 	u32 *pkt_ts_va = NULL;
 	u32 pkt_ts_num = 0;
 	u32 pkt_ts_ofst = 0;
+	u32 cmd_max_sz = 0;
 	u32 cmd_num = 0;
 	u32 cmd_idx = 0;
 	u32 blk_idx = 0; /* For Vss block cnt */
@@ -783,6 +784,16 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 			return -1;
 		}
 
+		if (frm_info->user_info[frm_idx].is_time_shared)
+			cmd_max_sz = IMGSYS_CMD_MAX_SZ_V;
+		else
+			cmd_max_sz = IMGSYS_CMD_MAX_SZ_N;
+		if (cmd_buf->cmd_offset > cmd_max_sz) {
+			pr_info("%s: [ERROR] cmd offset(0x%x) is over maximum(0x%x)",
+				__func__, cmd_buf->cmd_offset, cmd_max_sz);
+			return -1;
+		}
+
 		cmd_num = cmd_buf->curr_length / sizeof(struct Command);
 		cmd = (struct Command *)((unsigned long)(frm_info->user_info[frm_idx].g_swbuf) +
 			(unsigned long)(cmd_buf->cmd_offset));
@@ -792,7 +803,7 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 		if (isPack == 0) {
 			if (frm_info->group_id == -1) {
 				/* Choose cmdq_client base on hw scenario */
-				for (thd_idx = 0; thd_idx < IMGSYS_NOR_THD; thd_idx++) {
+				for (thd_idx = 0; thd_idx < IMGSYS_ENG_MAX; thd_idx++) {
 					if (hw_comb & 0x1) {
 						clt = imgsys_clt[thd_idx];
 						pr_debug(
@@ -808,13 +819,14 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 					clt = imgsys_clt[thd_idx];
 				}
 			} else {
-				if (frm_info->group_id < IMGSYS_NOR_THD) {
+				if ((frm_info->group_id >= 0) &&
+					(frm_info->group_id < IMGSYS_ENG_MAX)) {
 					thd_idx = frm_info->group_id;
 					clt = imgsys_clt[thd_idx];
 				} else {
 					pr_info(
-						"%s: [ERROR] group_id(%d) is over max hw num(%d) for frm(%d/%d)!\n",
-						__func__, frm_info->group_id, IMGSYS_NOR_THD,
+						"%s: [ERROR] group_id(%d) is not in range(%d) for hw_comb(0x%x) frm(%d/%d)!\n",
+						__func__, frm_info->group_id, IMGSYS_ENG_MAX,
 						frm_info->user_info[frm_idx].hw_comb,
 						frm_idx, frm_num);
 					return -1;
@@ -863,7 +875,7 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 				pkt_ts_num = 0;
 
 				/* Assign task priority according to is_time_shared */
-				if (frm_info->user_info[frm_idx].task_type == IMG_TASK_TIMESHARED)
+				if (frm_info->user_info[frm_idx].is_time_shared)
 					pkt->priority = IMGSYS_PRI_LOW;
 				else
 					pkt->priority = IMGSYS_PRI_HIGH;
@@ -881,7 +893,7 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 				imgsys_cmdq_sec_cmd(pkt);
 			#endif
 
-			ret = imgsys_cmdq_parser(frm_info, pkt, &cmd[cmd_idx], hw_comb,
+			ret = imgsys_cmdq_parser(frm_info, pkt, &cmd[cmd_idx], hw_comb, cmd_num,
 				(pkt_ts_pa + 4 * pkt_ts_ofst), &pkt_ts_num, thd_idx);
 			if (ret < 0) {
 				pr_info(
@@ -904,7 +916,7 @@ int imgsys_cmdq_sendtask(struct mtk_imgsys_dev *imgsys_dev,
 			/* Check for packing gce task */
 			pkt_ofst[task_cnt] = pkt->cmd_buf_size - CMDQ_INST_SIZE;
 			task_cnt++;
-			if ((frm_info->user_info[frm_idx].task_type == IMG_TASK_TIMESHARED)
+			if ((frm_info->user_info[frm_idx].is_time_shared)
 				|| (frm_info->user_info[frm_idx].is_secFrm)
 				|| (frm_info->user_info[frm_idx].is_earlycb)
 				|| ((frm_idx + 1) == frm_num)) {
@@ -1019,7 +1031,7 @@ sendtask_done:
 }
 
 int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
-						struct Command *cmd, u32 hw_comb,
+						struct Command *cmd, u32 hw_comb, u32 cmd_num,
 						dma_addr_t dma_pa, uint32_t *num, u32 thd_idx)
 {
 	bool stop = 0;
@@ -1036,6 +1048,13 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 	do {
 		switch (cmd->opcode) {
 		case IMGSYS_CMD_READ:
+			if ((cmd->u.address < IMGSYS_REG_START) ||
+				(cmd->u.address > IMGSYS_REG_END)) {
+				pr_info(
+					"%s: [ERROR] READ with source(0x%08lx) target(0x%08lx) mask(0x%08x)\n",
+					__func__, cmd->u.source, cmd->u.target, cmd->u.mask);
+				return -1;
+			}
 			pr_debug(
 				"%s: READ with source(0x%08lx) target(0x%08lx) mask(0x%08x)\n",
 				__func__, cmd->u.source, cmd->u.target, cmd->u.mask);
@@ -1049,13 +1068,28 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 					__func__);
 			break;
 		case IMGSYS_CMD_WRITE:
+			if ((cmd->u.address < IMGSYS_REG_START) ||
+				(cmd->u.address > IMGSYS_REG_END)) {
+				pr_info(
+					"%s: [ERROR] WRITE with addr(0x%08lx) value(0x%08x) mask(0x%08x)\n",
+					__func__, cmd->u.address, cmd->u.value, cmd->u.mask);
+				return -1;
+			}
 			pr_debug(
 				"%s: WRITE with addr(0x%08lx) value(0x%08x) mask(0x%08x)\n",
 				__func__, cmd->u.address, cmd->u.value, cmd->u.mask);
 			cmdq_pkt_write(pkt, NULL, (dma_addr_t)cmd->u.address,
-					cmd->u.value, cmd->u.mask);
+				cmd->u.value, cmd->u.mask);
 			break;
 		case IMGSYS_CMD_POLL:
+			if ((cmd->u.address < IMGSYS_REG_START) ||
+				(cmd->u.address > IMGSYS_REG_END)) {
+				pr_info(
+					"%s: [ERROR] POLL with addr(0x%08lx) value(0x%08x) mask(0x%08x) thd(%d)\n",
+					__func__, cmd->u.address, cmd->u.value, cmd->u.mask,
+					thd_idx);
+				return -1;
+			}
 			pr_debug(
 				"%s: POLL with addr(0x%08lx) value(0x%08x) mask(0x%08x) thd(%d)\n",
 				__func__, cmd->u.address, cmd->u.value, cmd->u.mask, thd_idx);
@@ -1065,6 +1099,13 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 				cmd->u.address, cmd->u.mask, 0xFFFF, CMDQ_GPR_R03+thd_idx);
 			break;
 		case IMGSYS_CMD_WAIT:
+			if (cmd->u.event >= IMGSYS_CMDQ_EVENT_MAX) {
+				pr_info(
+					"%s: [ERROR] WAIT event(%d) index is over maximum(%d) with action(%d)!\n",
+					__func__, cmd->u.event, IMGSYS_CMDQ_EVENT_MAX,
+					cmd->u.action);
+				return -1;
+			}
 			pr_debug(
 				"%s: WAIT event(%d/%d) action(%d)\n",
 				__func__, cmd->u.event, imgsys_event[cmd->u.event].event,
@@ -1090,6 +1131,13 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 					__func__, cmd->u.action);
 			break;
 		case IMGSYS_CMD_UPDATE:
+			if (cmd->u.event >= IMGSYS_CMDQ_EVENT_MAX) {
+				pr_info(
+					"%s: [ERROR] UPDATE event(%d) index is over maximum(%d) with action(%d)!\n",
+					__func__, cmd->u.event, IMGSYS_CMDQ_EVENT_MAX,
+					cmd->u.action);
+				return -1;
+			}
 			pr_debug(
 				"%s: UPDATE event(%d/%d) action(%d)\n",
 				__func__, cmd->u.event, imgsys_event[cmd->u.event].event,
@@ -1115,10 +1163,17 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 					__func__, cmd->u.action);
 			break;
 		case IMGSYS_CMD_ACQUIRE:
+			if (cmd->u.event >= IMGSYS_CMDQ_EVENT_MAX) {
+				pr_info(
+					"%s: [ERROR] ACQUIRE event(%d) index is over maximum(%d) with action(%d)!\n",
+					__func__, cmd->u.event, IMGSYS_CMDQ_EVENT_MAX,
+					cmd->u.action);
+				return -1;
+			}
 			pr_debug(
 				"%s: ACQUIRE event(%d/%d) action(%d)\n", __func__,
 				cmd->u.event, imgsys_event[cmd->u.event].event, cmd->u.action);
-				cmdq_pkt_acquire_event(pkt, imgsys_event[cmd->u.event].event);
+			cmdq_pkt_acquire_event(pkt, imgsys_event[cmd->u.event].event);
 			break;
 		case IMGSYS_CMD_TIME:
 			pr_debug(
@@ -1143,7 +1198,7 @@ int imgsys_cmdq_parser(struct swfrm_info_t *frm_info, struct cmdq_pkt *pkt,
 		}
 		cmd++;
 		count++;
-	} while (stop == 0);
+	} while ((stop == 0) && (count < cmd_num));
 
 	return count;
 }

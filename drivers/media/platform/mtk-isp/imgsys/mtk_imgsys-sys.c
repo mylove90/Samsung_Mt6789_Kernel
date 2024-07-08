@@ -243,7 +243,7 @@ int mtk_imgsys_hw_working_buf_pool_init(struct mtk_imgsys_dev *imgsys_dev)
 		buf->frameparam.vaddr =
 			buf->buffer.vaddr + DIP_FRAMEPARAM_OFFSET;
 
-		pr_info("DIP_FRAMEPARAM_SZ:%ld",
+		pr_info("DIP_FRAMEPARAM_SZ:%d",
 			sizeof(struct img_ipi_frameparam));
 		dev_dbg(imgsys_dev->dev,
 			"%s: frameparam(%d), scp_daddr(%pad), vaddr(0x%llx)\n",
@@ -587,12 +587,12 @@ static void cmdq_cb_timeout_worker(struct work_struct *work)
 	pipe = (struct mtk_imgsys_pipe *)swork->pipe;
 	if (!pipe->streaming) {
 		pr_info("%s pipe already streamoff\n", __func__);
-		goto release_req;
+		goto release_work;
 	}
 
 	if (!req) {
 		pr_info("%s NULL request Address\n", __func__);
-		goto release_work;
+		return;
 	}
 
 	frm_info = (struct swfrm_info_t *)(swork->req_sbuf_kva);
@@ -631,11 +631,9 @@ static void cmdq_cb_timeout_worker(struct work_struct *work)
 		wake_up_interruptible(&frm_info_waitq);
 	}
 
-release_req:
-	media_request_put(&req->req);
-
 release_work:
-	mtk_hcp_put_gce_buffer(pipe->imgsys_dev->scp_pdev);
+	mtk_hcp_put_gce_buffer(req->imgsys_pipe->imgsys_dev->scp_pdev);
+	media_request_put(&req->req);
 	/*vfree(swork);*/
 	pr_debug("%s leave\n", __func__);
 }
@@ -1607,9 +1605,6 @@ static void imgsys_scp_handler(void *data, unsigned int len, void *priv)
 			if (!reqfd_find) {
 				cb_info = vmalloc(
 					sizeof(vlist_type(struct reqfd_cbinfo_t)));
-				if (!cb_info)
-					return;
-
 				INIT_LIST_HEAD(vlist_link(cb_info, struct reqfd_cbinfo_t));
 				cb_info->req_fd = swfrm_info->request_fd;
 				cb_info->req_no = swfrm_info->request_no;
@@ -2008,12 +2003,8 @@ static int mtk_imgsys_hw_connect(struct mtk_imgsys_dev *imgsys_dev)
 	if (IS_ERR_OR_NULL(dvfs_info->reg))
 		dev_dbg(dvfs_info->dev,
 			"%s: [ERROR] reg is err or null\n", __func__);
-	else {
-		ret = regulator_enable(dvfs_info->reg);
-		if (ret)
-			dev_info(imgsys_dev->dev, "%s: regulater_enable failed\n", __func__);
-
-	}
+	else
+		regulator_enable(dvfs_info->reg);
 
 	pm_runtime_get_sync(imgsys_dev->dev);
 	/*set default value for hw module*/
@@ -2032,6 +2023,8 @@ static int mtk_imgsys_hw_connect(struct mtk_imgsys_dev *imgsys_dev)
 		dev_info(imgsys_dev->dev,
 			"%s: imgsys_quick_onoff_enable(%d)\n",
 			__func__, imgsys_quick_onoff_enable());
+
+	INIT_LIST_HEAD(&imgsys_dev->imgsys_pipe[0].pipe_job_pending_list);
 
 #if MTK_CM4_SUPPORT
 	struct img_ipi_param ipi_param;
