@@ -116,8 +116,9 @@ def main(**args):
 
     file_text.append("PATH=${ROOT_DIR}/../prebuilts/perl/linux-x86/bin:${ROOT_DIR}/build/build-tools/path/linux-x86:/usr/bin:/bin")
     file_text.append("MAKE_GOALS=\"all\"")
-    file_text.append("TRIM_NONLISTED_KMI=")
-    file_text.append("KMI_SYMBOL_LIST_STRICT_MODE=")
+    if (build_mode != 'user'):
+        file_text.append("TRIM_NONLISTED_KMI=")
+        file_text.append("KMI_SYMBOL_LIST_STRICT_MODE=")
     file_text.append("MODULES_ORDER=")
     file_text.append("KMI_ENFORCED=1")
     file_text.append("if [ \"x${DO_ABI_MONITOR}\" == \"x1\" ]; then")
@@ -125,6 +126,7 @@ def main(**args):
     file_text.append("  KMI_SYMBOL_LIST_ADD_ONLY=1")
     file_text.append("  ADDITIONAL_KMI_SYMBOL_LISTS=\"${ADDITIONAL_KMI_SYMBOL_LISTS} android/abi_gki_aarch64\"")
     file_text.append("fi")
+    file_text.append("unset BUILD_NUMBER")
 
     all_defconfig = ''
     pre_defconfig_cmds = ''
