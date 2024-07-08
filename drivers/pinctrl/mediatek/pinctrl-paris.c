@@ -594,7 +594,8 @@ static int mtk_hw_get_value_wrap(struct mtk_pinctrl *hw, unsigned int gpio, int 
 ssize_t mtk_pctrl_show_one_pin(struct mtk_pinctrl *hw,
 	unsigned int gpio, char *buf, unsigned int bufLen)
 {
-	int pinmux, val, pullup = 0, pullen = 0, len = 0, r1 = -1, r0 = -1, rsel = -1;
+	int pullup = 0, pullen = 0, r1 = -1, r0 = -1, len = 0, rsel = -1;
+	int pinmux, val;
 	const struct mtk_pin_desc *desc;
 
 	if (gpio >= hw->soc->npins)
@@ -1004,6 +1005,26 @@ static int mtk_pctrl_build_state(struct platform_device *pdev)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SEC_PM)
+static struct mtk_pinctrl *mtk_hw;
+
+struct mtk_pinctrl *sec_gpiochip_get_data(void)
+{
+	return mtk_hw;
+}
+EXPORT_SYMBOL(sec_gpiochip_get_data);
+
+static void sec_mtk_get_hw_addr(struct mtk_pinctrl *hw)
+{
+	if (!hw) {
+		pr_err("%s: no hw information!\n", __func__);
+		return;
+	}
+	mtk_hw = hw;
+	return;
+}
+#endif /* CONFIG_SEC_PM */
+
 int mtk_paris_pinctrl_probe(struct platform_device *pdev,
 			    const struct mtk_pin_soc *soc)
 {
@@ -1086,7 +1107,9 @@ int mtk_paris_pinctrl_probe(struct platform_device *pdev,
 	}
 
 	platform_set_drvdata(pdev, hw);
-
+#if IS_ENABLED(CONFIG_SEC_PM)
+	sec_mtk_get_hw_addr(hw);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mtk_paris_pinctrl_probe);
