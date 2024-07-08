@@ -19,6 +19,7 @@
 #include <mt-plat/mtk_gpu_utility.h>
 #include "ged_notify_sw_vsync.h"
 #include "ged_log.h"
+#include "ged_tracepoint.h"
 #include "ged_base.h"
 #include "ged_monitor_3D_fence.h"
 #include "ged.h"
@@ -378,15 +379,7 @@ enum hrtimer_restart ged_sw_vsync_check_cb(struct hrtimer *timer)
 					ged_timer_switch_work_handle);
 				queue_work(g_psNotifyWorkQueue,
 					&psNotify->sWork);
-
-			/* update last freq. before timer off */
-				ged_log_perf_trace_counter("gpu_freq",
-				(long long)(ged_get_freq_by_idx(ged_get_min_oppidx()) / 1000),
-				5566, 0, 0);
 			}
-		ged_log_perf_trace_counter("gpu_freq",
-			(long long)(ged_get_freq_by_idx(ged_get_min_oppidx()) / 1000),
-			 5566, 0, 0);
 #ifdef GED_DVFS_DEBUG
 			ged_log_buf_print(ghLogBuf_DVFS,
 				"[GED_K] Timer removed	(ts=%llu) ", temp);
@@ -442,18 +435,14 @@ void ged_dvfs_gpu_clock_switch_notify(bool bSwitch)
 				"[GED_K] HW Start Timer");
 			timer_switch(true);
 		}
-		ged_log_perf_trace_counter("gpu_state",
-			1, 5566, 0, 0);
 	} else {
 		g_ns_gpu_off_ts = ged_get_time();
 		ged_gpu_power_off_notified = true;
 		g_bGPUClock = false;
 		ged_log_buf_print(ghLogBuf_DVFS, "[GED_K] Buck-off");
-
-		// Update power on/off state
-		ged_log_perf_trace_counter("gpu_state",
-			0, 5566, 0, 0);
 	}
+	// Update power on/off state
+	trace_tracing_mark_write(5566, "gpu_state", bSwitch);
 }
 EXPORT_SYMBOL(ged_dvfs_gpu_clock_switch_notify);
 

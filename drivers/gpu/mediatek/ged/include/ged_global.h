@@ -13,6 +13,8 @@ extern void (*mtk_set_bottom_gpu_freq_fp)(unsigned int idx);
 extern unsigned int (*mtk_get_bottom_gpu_freq_fp)(void);
 extern unsigned int (*mtk_custom_get_gpu_freq_level_count_fp)(void);
 extern void (*mtk_custom_boost_gpu_freq_fp)(unsigned int ui32FreqLevel);
+extern unsigned long (*mtk_get_custom_upbound_gpu_freq_fp)(void);
+extern unsigned long (*mtk_get_custom_boost_gpu_freq_fp)(void);
 extern void (*mtk_custom_upbound_gpu_freq_fp)(unsigned int ui32FreqLevel);
 extern unsigned int (*mtk_get_gpu_loading_fp)(void);
 extern unsigned int (*mtk_get_gpu_block_fp)(void);

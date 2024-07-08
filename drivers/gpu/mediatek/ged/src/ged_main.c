@@ -50,6 +50,9 @@
 #else
 #include <ged_gpufreq_v1.h>
 #endif /* CONFIG_MTK_GPUFREQ_V2 */
+#ifdef GED_SKI_SUPPORT
+#include "ged_ski.h"
+#endif
 
 /**
  * ===============================================
@@ -66,6 +69,8 @@ static ssize_t ged_write(struct file *filp,
 	const char __user *buf, size_t count, loff_t *f_pos);
 static long ged_dispatch(struct file *pFile,
 	struct GED_BRIDGE_PACKAGE *psBridgePackageKM);
+static int ged_validate_cmd(unsigned int ioctlCmd);
+static int ged_validate_cmd_32(unsigned int ioctlCmd);
 static long ged_ioctl(struct file *pFile,
 	unsigned int ioctlCmd, unsigned long arg);
 #ifdef CONFIG_COMPAT
@@ -186,40 +191,41 @@ static long ged_dispatch(struct file *pFile,
 
 	/* We make sure the both size are GE 0 integer.
 	 */
-	if (psBridgePackageKM->i32InBufferSize >= 0
-		&& psBridgePackageKM->i32OutBufferSize >= 0) {
+	if (psBridgePackageKM->i32InBufferSize > 0 &&
+		psBridgePackageKM->i32OutBufferSize > 0) {
+		int32_t inputBufferSize =
+				psBridgePackageKM->i32InBufferSize;
 
-		if (psBridgePackageKM->i32InBufferSize > 0) {
-			int32_t inputBufferSize =
-					psBridgePackageKM->i32InBufferSize;
-
-			if (GED_BRIDGE_COMMAND_GE_ALLOC ==
-					GED_GET_BRIDGE_ID(
-					psBridgePackageKM->ui32FunctionID)) {
-				inputBufferSize = sizeof(int) +
-				sizeof(uint32_t) * GE_ALLOC_STRUCT_NUM;
-			}
-
-			pvIn = kmalloc(inputBufferSize, GFP_KERNEL);
-
-			if (pvIn == NULL)
-				goto dispatch_exit;
-
-			if (ged_copy_from_user(pvIn,
-				psBridgePackageKM->pvParamIn,
-				inputBufferSize) != 0) {
-				GED_LOGE("Failed to ged_copy_from_user\n");
+		if (GED_BRIDGE_COMMAND_GE_ALLOC ==
+				GED_GET_BRIDGE_ID(
+				psBridgePackageKM->ui32FunctionID)) {
+			inputBufferSize = sizeof(int) +
+			sizeof(uint32_t) * GE_ALLOC_STRUCT_NUM;
+			// hardcode region_num = GE_ALLOC_STRUCT_NUM,
+			// need check input buffer size
+			if (psBridgePackageKM->i32InBufferSize <
+				inputBufferSize) {
+				GED_LOGE("Failed to region_num, it must be %d\n",
+					GE_ALLOC_STRUCT_NUM);
 				goto dispatch_exit;
 			}
 		}
 
-		if (psBridgePackageKM->i32OutBufferSize > 0) {
-			pvOut = kzalloc(psBridgePackageKM->i32OutBufferSize,
-				GFP_KERNEL);
+		pvIn = kmalloc(inputBufferSize, GFP_KERNEL);
+		if (pvIn == NULL)
+			goto dispatch_exit;
 
-			if (pvOut == NULL)
-				goto dispatch_exit;
+		if (ged_copy_from_user(pvIn,
+			psBridgePackageKM->pvParamIn,
+			inputBufferSize) != 0) {
+			GED_LOGE("Failed to ged_copy_from_user\n");
+			goto dispatch_exit;
 		}
+
+		pvOut = kzalloc(psBridgePackageKM->i32OutBufferSize,
+			GFP_KERNEL);
+		if (pvOut == NULL)
+			goto dispatch_exit;
 
 		/* Make sure that the UM will never break the KM.
 		 * Check IO size are both matched the size of IO sturct.
@@ -304,11 +310,13 @@ static long ged_dispatch(struct file *pFile,
 			break;
 		case GED_BRIDGE_COMMAND_GE_GET:
 			VALIDATE_ARG(GE_GET, GE_GET);
-			ret = ged_bridge_ge_get(pvIn, pvOut);
+			ret = ged_bridge_ge_get(pvIn, pvOut,
+				psBridgePackageKM->i32OutBufferSize);
 			break;
 		case GED_BRIDGE_COMMAND_GE_SET:
 			VALIDATE_ARG(GE_SET, GE_SET);
-			ret = ged_bridge_ge_set(pvIn, pvOut);
+			ret = ged_bridge_ge_set(pvIn, pvOut,
+				psBridgePackageKM->i32InBufferSize);
 			break;
 		case GED_BRIDGE_COMMAND_GE_INFO:
 			VALIDATE_ARG(GE_INFO, GE_INFO);
@@ -338,11 +346,9 @@ static long ged_dispatch(struct file *pFile,
 			break;
 		}
 
-		if (psBridgePackageKM->i32OutBufferSize > 0) {
-			if (ged_copy_to_user(psBridgePackageKM->pvParamOut,
+		if (ged_copy_to_user(psBridgePackageKM->pvParamOut,
 			pvOut, psBridgePackageKM->i32OutBufferSize) != 0) {
-				goto dispatch_exit;
-			}
+			goto dispatch_exit;
 		}
 	}
 
@@ -351,6 +357,88 @@ dispatch_exit:
 	kfree(pvOut);
 
 	return ret;
+}
+
+static int ged_validate_cmd(unsigned int ioctlCmd)
+{
+	unsigned int valid_cmd[] = {
+		GED_IOWR(GED_BRIDGE_COMMAND_LOG_BUF_GET),
+		GED_IOWR(GED_BRIDGE_COMMAND_LOG_BUF_WRITE),
+		GED_IOWR(GED_BRIDGE_COMMAND_LOG_BUF_RESET),
+		GED_IOWR(GED_BRIDGE_COMMAND_BOOST_GPU_FREQ),
+		GED_IOWR(GED_BRIDGE_COMMAND_MONITOR_3D_FENCE),
+		GED_IOWR(GED_BRIDGE_COMMAND_QUERY_INFO),
+		GED_IOWR(GED_BRIDGE_COMMAND_NOTIFY_VSYNC),
+		GED_IOWR(GED_BRIDGE_COMMAND_DVFS_PROBE),
+		GED_IOWR(GED_BRIDGE_COMMAND_DVFS_UM_RETURN),
+		GED_IOWR(GED_BRIDGE_COMMAND_EVENT_NOTIFY),
+		GED_IOWR(GED_BRIDGE_COMMAND_GPU_HINT_TO_CPU),
+		GED_IOWR(GED_BRIDGE_COMMAND_HINT_FORCE_MDP),
+		GED_IOWR(GED_BRIDGE_COMMAND_QUERY_DVFS_FREQ_PRED),
+		GED_IOWR(GED_BRIDGE_COMMAND_QUERY_GPU_DVFS_INFO),
+		GED_IOWR(GED_BRIDGE_COMMAND_GE_ALLOC),
+		GED_IOWR(GED_BRIDGE_COMMAND_GE_GET),
+		GED_IOWR(GED_BRIDGE_COMMAND_GE_SET),
+		GED_IOWR(GED_BRIDGE_COMMAND_GE_INFO),
+		GED_IOWR(GED_BRIDGE_COMMAND_GPU_TIMESTAMP),
+		GED_IOWR(GED_BRIDGE_COMMAND_GPU_TUNER_STATUS),
+		GED_IOWR(GED_BRIDGE_COMMAND_DMABUF_SET_NAME),
+#ifdef CONFIG_SYNC_FILE
+		GED_IOWR(GED_BRIDGE_COMMAND_CREATE_TIMELINE),
+#endif
+	};
+	unsigned int i;
+	bool is_valid = false;
+
+	for (i = 0; i < ARRAY_SIZE(valid_cmd); i++) {
+		if (ioctlCmd == valid_cmd[i]) {
+			is_valid = true;
+			break;
+		}
+	}
+
+	return is_valid ? 0 : -EINVAL;
+}
+
+static int ged_validate_cmd_32(unsigned int ioctlCmd)
+{
+	unsigned int valid_cmd[] = {
+		GED_IOWR_32(GED_BRIDGE_COMMAND_LOG_BUF_GET),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_LOG_BUF_WRITE),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_LOG_BUF_RESET),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_BOOST_GPU_FREQ),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_MONITOR_3D_FENCE),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_QUERY_INFO),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_NOTIFY_VSYNC),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_DVFS_PROBE),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_DVFS_UM_RETURN),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_EVENT_NOTIFY),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GPU_HINT_TO_CPU),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_HINT_FORCE_MDP),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_QUERY_DVFS_FREQ_PRED),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_QUERY_GPU_DVFS_INFO),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GE_ALLOC),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GE_GET),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GE_SET),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GE_INFO),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GPU_TIMESTAMP),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_GPU_TUNER_STATUS),
+		GED_IOWR_32(GED_BRIDGE_COMMAND_DMABUF_SET_NAME),
+#ifdef CONFIG_SYNC_FILE
+		GED_IOWR_32(GED_BRIDGE_COMMAND_CREATE_TIMELINE),
+#endif
+	};
+	unsigned int i;
+	bool is_valid = false;
+
+	for (i = 0; i < ARRAY_SIZE(valid_cmd); i++) {
+		if (ioctlCmd == valid_cmd[i]) {
+			is_valid = true;
+			break;
+		}
+	}
+
+	return is_valid ? 0 : -EINVAL;
 }
 
 static long
@@ -363,9 +451,21 @@ ged_ioctl(struct file *pFile, unsigned int ioctlCmd, unsigned long arg)
 	struct GED_BRIDGE_PACKAGE sBridgePackageKM;
 
 	psBridgePackageKM = &sBridgePackageKM;
+	ret = ged_validate_cmd(ioctlCmd);
+	if (ret) {
+		GED_LOGE("Unknown ioctlCmd: %u", ioctlCmd);
+		goto unlock_and_return;
+	}
 	if (ged_copy_from_user(psBridgePackageKM, psBridgePackageUM,
 		sizeof(struct GED_BRIDGE_PACKAGE)) != 0) {
 		GED_LOGE("Failed to ged_copy_from_user\n");
+		ret = -EFAULT;
+		goto unlock_and_return;
+	}
+	if (ioctlCmd != psBridgePackageKM->ui32FunctionID) {
+		GED_LOGE("ioctlCmd (%u) != ui32FunctionID (%u)",
+				ioctlCmd, psBridgePackageKM->ui32FunctionID);
+		ret = -EINVAL;
 		goto unlock_and_return;
 	}
 
@@ -380,15 +480,6 @@ unlock_and_return:
 static long
 ged_ioctl_compat(struct file *pFile, unsigned int ioctlCmd, unsigned long arg)
 {
-	struct GED_BRIDGE_PACKAGE_32 {
-		unsigned int    ui32FunctionID;
-		int             i32Size;
-		unsigned int    ui32ParamIn;
-		int             i32InBufferSize;
-		unsigned int    ui32ParamOut;
-		int             i32OutBufferSize;
-	};
-
 	int ret = -EFAULT;
 	struct GED_BRIDGE_PACKAGE sBridgePackageKM64;
 	struct GED_BRIDGE_PACKAGE_32 sBridgePackageKM32;
@@ -397,10 +488,22 @@ ged_ioctl_compat(struct file *pFile, unsigned int ioctlCmd, unsigned long arg)
 	struct GED_BRIDGE_PACKAGE_32 *psBridgePackageUM32 =
 		(struct GED_BRIDGE_PACKAGE_32 *)arg;
 
+	ret = ged_validate_cmd_32(ioctlCmd);
+	if (ret) {
+		GED_LOGE("Unknown ioctlCmd: %u", ioctlCmd);
+		goto unlock_and_return;
+	}
 	if (ged_copy_from_user(psBridgePackageKM32,
 		psBridgePackageUM32,
 		sizeof(struct GED_BRIDGE_PACKAGE_32)) != 0) {
 		GED_LOGE("Failed to ged_copy_from_user\n");
+		ret = -EFAULT;
+		goto unlock_and_return;
+	}
+	if (ioctlCmd != psBridgePackageKM32->ui32FunctionID) {
+		GED_LOGE("ioctlCmd (%u) != ui32FunctionID (%u)",
+				ioctlCmd, psBridgePackageKM32->ui32FunctionID);
+		ret = -EINVAL;
 		goto unlock_and_return;
 	}
 
@@ -575,6 +678,14 @@ static int ged_pdrv_probe(struct platform_device *pdev)
 		goto ERROR;
 	}
 
+#ifdef GED_SKI_SUPPORT
+	err = ged_ski_init();
+	if (unlikely(err != GED_OK)) {
+		GED_LOGE("Failed to init SKI!\n");
+		goto ERROR;
+	}
+#endif
+
 #ifndef GED_BUFFER_LOG_DISABLE
 	ghLogBuf_GPU = ged_log_buf_alloc(512, 128 * 512,
 		GED_LOG_BUF_TYPE_RINGBUFFER, "GPU_FENCE", NULL);
@@ -646,6 +757,10 @@ static int ged_pdrv_remove(struct platform_device *pdev)
 	ged_log_buf_free(ghLogBuf_GPU);
 	ghLogBuf_GPU = 0;
 #endif /* GED_BUFFER_LOG_DISABLE */
+
+#ifdef GED_SKI_SUPPORT
+	ged_ski_exit();
+#endif
 
 	ged_gpu_tuner_exit();
 

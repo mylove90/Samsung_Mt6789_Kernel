@@ -29,6 +29,7 @@ ccflags-y += -DMTK_GED_KPI
 ccflags-y += -DMET_USER_EVENT_SUPPORT -DMTK_GPU_DVFS
 ccflags-y += -DGED_DVFS_DEBUG_BUF
 ccflags-y += -DMTK_GPU_BM_2
+ccflags-y += -DGED_SKI_SUPPORT
 
 ifeq ($(CONFIG_MTK_ENABLE_GMO), y)
 ccflags-y += -DGED_BUFFER_LOG_DISABLE
@@ -103,7 +104,8 @@ ged-y += \
 	src/ged_gpu_tuner.o \
 	src/ged_kpi.o \
 	src/ged_eb.o \
-	src/ged_gpu_bm.o
+	src/ged_gpu_bm.o \
+	src/ged_ski.o
 
 ged-$(CONFIG_SYNC_FILE) += src/ged_sync.o
 

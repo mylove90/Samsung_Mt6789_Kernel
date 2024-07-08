@@ -117,6 +117,23 @@ EXPORT_SYMBOL(mtk_custom_get_gpu_freq_level_count);
 
 /* -------------------------------------------------------------------------- */
 
+unsigned long (*mtk_get_custom_boost_gpu_freq_fp)(void) = NULL;
+EXPORT_SYMBOL(mtk_get_custom_boost_gpu_freq_fp);
+
+bool mtk_get_custom_boost_gpu_freq(unsigned long *pulFreq)
+{
+	if (mtk_get_custom_boost_gpu_freq_fp != NULL) {
+		if (pulFreq) {
+			*pulFreq = mtk_get_custom_boost_gpu_freq_fp();
+			return true;
+		}
+	}
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_custom_boost_gpu_freq);
+
+/* -------------------------------------------------------------------------- */
+
 void (*mtk_custom_boost_gpu_freq_fp)(unsigned int ui32FreqLevel) = NULL;
 EXPORT_SYMBOL(mtk_custom_boost_gpu_freq_fp);
 
@@ -129,6 +146,23 @@ bool mtk_custom_boost_gpu_freq(unsigned int ui32FreqLevel)
 	return false;
 }
 EXPORT_SYMBOL(mtk_custom_boost_gpu_freq);
+
+/* -------------------------------------------------------------------------- */
+
+unsigned long (*mtk_get_custom_upbound_gpu_freq_fp)(void) = NULL;
+EXPORT_SYMBOL(mtk_get_custom_upbound_gpu_freq_fp);
+
+bool mtk_get_custom_upbound_gpu_freq(unsigned long *pulFreq)
+{
+	if (mtk_get_custom_upbound_gpu_freq_fp != NULL) {
+		if (pulFreq) {
+			*pulFreq = mtk_get_custom_upbound_gpu_freq_fp();
+			return true;
+		}
+	}
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_custom_upbound_gpu_freq);
 
 /* -------------------------------------------------------------------------- */
 

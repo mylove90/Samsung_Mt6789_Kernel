@@ -29,6 +29,7 @@
 #include "ged_dvfs.h"
 
 #include "ged_log.h"
+#include "ged_tracepoint.h"
 #include "ged_global.h"
 
 #include <mt-plat/mtk_gpu_utility.h>
@@ -56,7 +57,7 @@ static struct hrtimer g_HT_fdvfs_debug;
 #define GED_FDVFS_TIMER_TIMEOUT 1000000 // 1ms
 
 #define DVFS_trace_counter(name, value) \
-	ged_log_perf_trace_counter(name, value, 5566, 0, 0)
+	trace_tracing_mark_write(5566, name, value)
 
 static DEFINE_SPINLOCK(counter_info_lock);
 static int mfg_is_power_on;
@@ -173,7 +174,7 @@ int ged_to_fdvfs_command(unsigned int cmd, struct fdvfs_ipi_data *ipi_data)
 			FASTDVFS_IPI_TIMEOUT);
 
 		if (ret != 0) {
-			GPUFDVFS_LOGI("(%d), cmd: %u, mtk_ipi_send_compl, ret: %d\n",
+			GPUFDVFS_LOGI("(%d), cmd: %d, mtk_ipi_send_compl, ret: %d\n",
 				__LINE__, cmd, ret);
 		} else {
 			ret = fdvfs_ipi_rcv_msg.u.set_para.arg[0];
@@ -860,7 +861,7 @@ void fdvfs_init(void)
 				WQ_FREEZABLE | WQ_MEM_RECLAIM);
 	}
 
-	GPUFDVFS_LOGI("succeed to register channel: (%d)(%d), ipi_size: %u\n",
+	GPUFDVFS_LOGI("succeed to register channel: (%d)(%d), ipi_size: %d\n",
 		g_fast_dvfs_ipi_channel,
 		g_fdvfs_event_ipi_channel,
 		FDVFS_IPI_DATA_LEN);

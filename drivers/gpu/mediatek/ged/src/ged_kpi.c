@@ -15,6 +15,7 @@
 #include <ged_hashtable.h>
 #include <ged_dvfs.h>
 #include <ged_log.h>
+#include "ged_tracepoint.h"
 #include <ged.h>
 #include "ged_thread.h"
 /* #include <ged_vsync.h> */
@@ -1062,9 +1063,7 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 			psHead->t_cpu_latest =
 				psKPI->ullTimeStamp1 - psHead->last_TimeStamp1;
 			psKPI->t_cpu = psHead->t_cpu_latest;
-			ged_log_perf_trace_counter("t_cpu", psKPI->t_cpu,
-				psTimeStamp->pid, psTimeStamp->i32FrameID
-				, ulID);
+
 			psKPI->QedBufferDelay = psHead->last_QedBufferDelay;
 			psHead->last_QedBufferDelay = 0;
 			psHead->last_TimeStamp1 = psKPI->ullTimeStamp1;
@@ -1233,19 +1232,9 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 						MAX(util_ex.util_3d,
 						util_ex.util_ta);
 
-					/* hint JS0, JS1 info to EAT */
-					ged_log_perf_trace_counter("gpu_ta_loading",
-					util_ex.util_ta, psTimeStamp->pid,
-					psTimeStamp->i32FrameID, ulID);
-					ged_log_perf_trace_counter("gpu_3d_loading",
-					util_ex.util_3d, psTimeStamp->pid,
-					psTimeStamp->i32FrameID, ulID);
-
 					/* hint GiFT ratio to EAT */
-					ged_log_perf_trace_counter(
-					"is_gift_on", g_psGIFT->gift_ratio,
-					psTimeStamp->pid,
-					psTimeStamp->i32FrameID, ulID);
+					trace_tracing_mark_write(psTimeStamp->pid, "is_gift_on",
+						g_psGIFT->gift_ratio);
 
 					time_spent = psKPI->cpu_gpu_info.gpu.t_gpu_real;
 
@@ -1257,13 +1246,11 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 
 					if (ged_is_fdvfs_support() &&
 						psTimeStamp->pid != pid_sf &&
-						psTimeStamp->pid != pid_sysui) {
+						psTimeStamp->pid != pid_sysui)
 						g_eb_coef = mtk_gpueb_dvfs_set_feedback_info(
 							psKPI->gpu_done_interval, util_ex,
 							ged_kpi_get_cur_fps());
-						ged_log_perf_trace_counter("eb_coef",
-							(long long)g_eb_coef, 5566, 0, 0);
-					}
+
 				} else {
 					psKPI->t_gpu
 						= time_spent
@@ -1299,16 +1286,8 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 						mtk_gpueb_dvfs_set_frame_base_dvfs(0);
 				}
 			}
-			if (main_head == psHead) {
-				if (psHead->target_fps == -1) {
-					psKPI->t_gpu_target = g_target_time_default;
-					ged_log_perf_trace_counter("target_fps_fb",
-						g_target_fps_default, 5566, 0, 0);
-				} else {
-					ged_log_perf_trace_counter("target_fps_fb",
-						psHead->target_fps, 5566, 0, 0);
-				}
-			}
+			if (main_head == psHead && psHead->target_fps == -1)
+				psKPI->t_gpu_target = g_target_time_default;
 
 			if (main_head == psHead)
 				gpu_freq_pre = ged_kpi_gpu_dvfs(
@@ -1353,12 +1332,9 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				ged_set_backup_timer_timeout(
 					psKPI->t_gpu_target << 1);
 
-			ged_log_perf_trace_counter("t_gpu",
-				psKPI->t_gpu, psTimeStamp->pid,
-				psTimeStamp->i32FrameID, ulID);
+			trace_tracing_mark_write(psTimeStamp->pid, "t_gpu",	psKPI->t_gpu);
 			if (main_head == psHead)
-				ged_log_perf_trace_counter("t_gpu",
-					psKPI->t_gpu, 5566, 0, 0);
+				trace_tracing_mark_write(5566, "t_gpu",	psKPI->t_gpu);
 
 			if (psHead->last_TimeStamp1
 				!= psKPI->ullTimeStamp1) {
@@ -1442,16 +1418,14 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 				pre_fence_delay =
 				psTimeStamp->ullTimeStamp -
 					psKPI->ullTimeStamp1;
-				ged_log_perf_trace_counter("t_pre_fence_delay",
-				pre_fence_delay, psTimeStamp->pid,
-				psTimeStamp->i32FrameID, ulID);
+				trace_tracing_mark_write(psTimeStamp->pid, "t_pre_fence_delay",
+					pre_fence_delay);
 				psKPI->ulMask |= GED_TIMESTAMP_TYPE_P;
 				psKPI->ullTimeStampP =
 					psTimeStamp->ullTimeStamp;
 			} else {
-				ged_log_perf_trace_counter("t_pre_fence_delay",
-				0, psTimeStamp->pid, psTimeStamp->i32FrameID
-				, ulID);
+				trace_tracing_mark_write(psTimeStamp->pid, "t_pre_fence_delay",
+					0);
 #ifdef GED_KPI_DEBUG
 				GED_LOGD(
 		"[GED_KPI][Exception] TYPE_P: psKPI NULL, frameID: %lu\n",
@@ -1536,8 +1510,8 @@ static void ged_kpi_work_cb(struct work_struct *psWork)
 
 		target_FPS = psTimeStamp->i32FrameID;
 
-		ged_log_perf_trace_counter("target_fps_fpsgo",
-				(target_FPS&0x000000ff), 5566, 0, 0);
+		trace_tracing_mark_write(5566, "target_fps_fpsgo",
+			(target_FPS&0x000000ff));
 
 		ulID = psTimeStamp->ullWnd;
 		eara_fps_margin = psTimeStamp->i32QedBuffer_length;
@@ -1620,24 +1594,18 @@ static GED_ERROR ged_kpi_push_timestamp(
 		case GED_TIMESTAMP_TYPE_D:
 			break;
 		case GED_TIMESTAMP_TYPE_1:
-			ged_log_trace_counter("GED_KPI_QedBuffer_CNT",
-				atomic_inc_return(&event_QedBuffer_cnt));
-			ged_log_trace_counter("GED_KPI_3D_fence_CNT",
-				atomic_inc_return(&event_3d_fence_cnt));
+			atomic_inc_return(&event_QedBuffer_cnt);
+			atomic_inc_return(&event_3d_fence_cnt);
 			break;
 		case GED_TIMESTAMP_TYPE_2:
-			ged_log_trace_counter("GED_KPI_3D_fence_CNT",
-				atomic_dec_return(&event_3d_fence_cnt));
+			atomic_dec_return(&event_3d_fence_cnt);
 			break;
 		case GED_TIMESTAMP_TYPE_P:
 			break;
 		case GED_TIMESTAMP_TYPE_S:
-			ged_log_trace_counter("GED_KPI_QedBuffer_CNT",
-				atomic_dec_return(&event_QedBuffer_cnt));
+			atomic_dec_return(&event_QedBuffer_cnt);
 			break;
 		case GED_TIMESTAMP_TYPE_H:
-			ged_log_trace_counter("GED_KPI_HW_Vsync",
-				atomic_read(&event_hw_vsync));
 			atomic_set(&event_hw_vsync,
 				(atomic_inc_return(&event_hw_vsync)%2));
 			break;

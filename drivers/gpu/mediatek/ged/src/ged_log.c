@@ -26,6 +26,9 @@
 #include "ged_hashtable.h"
 #include "ged_sysfs.h"
 
+#define CREATE_TRACE_POINTS
+#include "ged_tracepoint.h"
+
 enum {
 	/* 0x00 - 0xff reserved for internal buffer type */
 
@@ -99,8 +102,7 @@ static struct dentry *gpsGEDLogBufsDir;
 
 static GED_HASHTABLE_HANDLE ghHashTable;
 
-unsigned int ged_log_trace_enable;
-unsigned int ged_log_perf_trace_enable;
+static unsigned int ged_log_perf_trace_enable;
 
 static struct kobject *gpu_debug_kobj;
 static unsigned int gpu_debug_log_enable;
@@ -206,7 +208,12 @@ GED_ERROR __ged_log_buf_vprint(struct GED_LOG_BUF *psGEDLogBuf,
 	buf_n = psGEDLogBuf->i32BufferSize - psGEDLogBuf->i32BufferCurrent;
 	len = vsnprintf(psGEDLogBuf->pcBuffer + psGEDLogBuf->i32BufferCurrent,
 		buf_n, fmt, args);
-
+	// To avoid when pcBuffer[-x] == 10('\n') tampered with 0.
+	if (len <= 0) {
+		spin_unlock_irqrestore(&psGEDLogBuf->sSpinLock,
+			psGEDLogBuf->ulIRQFlags);
+		return GED_OK;
+	}
 	/* if 'len' >= 'buf_n', the resulting string is truncated.
 	 * let 'len' be a safe number
 	 */
@@ -1067,7 +1074,6 @@ GED_ERROR ged_log_system_init(void)
 		goto ERROR;
 	}
 
-	ged_log_trace_enable = 0;
 	ged_log_perf_trace_enable = 0;
 
 	err = ged_sysfs_create_dir(NULL, "gpu_debug", &gpu_debug_kobj);
@@ -1190,83 +1196,27 @@ void ged_log_dump(GED_LOG_BUF_HANDLE hLogBuf)
 }
 EXPORT_SYMBOL(ged_log_dump);
 
-static noinline int tracing_mark_write(const char *buf)
+static int set_ged_log_perf_trace_enable(const char *val,
+	const struct kernel_param *kp)
 {
-	trace_printk(buf);
+	int ret = param_set_uint(val, kp);
+
+	if (ret)
+		return ret;
+
+	// enable/disable ged tracepoints
+	if (ged_log_perf_trace_enable == 0)
+		trace_set_clr_event("ged", NULL, 0);
+	else if (ged_log_perf_trace_enable == 1)
+		trace_set_clr_event("ged", NULL, 1);
+
 	return 0;
 }
-void ged_log_trace_begin(char *name)
-{
-#ifdef ENABLE_GED_SYSTRACE_UTIL
-	char buf[256];
-	int cx;
 
-	if (ged_log_trace_enable) {
-		cx = snprintf(buf, sizeof(buf),
-			"B|%d|%s\n", current->tgid, name);
-		if (cx >= 0 && cx < sizeof(buf))
-			tracing_mark_write(buf);
-	}
-#endif
-}
-EXPORT_SYMBOL(ged_log_trace_begin);
-void ged_log_trace_end(void)
-{
-#ifdef ENABLE_GED_SYSTRACE_UTIL
-	char buf[256];
-	int cx;
+static struct kernel_param_ops ged_log_perf_trace_enable_ops = {
+	.set = set_ged_log_perf_trace_enable,
+	.get = param_get_uint,
+};
 
-	if (ged_log_trace_enable) {
-		cx = snprintf(buf, sizeof(buf), "E\n");
-		if (cx >= 0 && cx < sizeof(buf))
-			tracing_mark_write(buf);
-	}
-#endif
-}
-EXPORT_SYMBOL(ged_log_trace_end);
-void ged_log_trace_counter(char *name, int count)
-{
-#ifdef ENABLE_GED_SYSTRACE_UTIL
-	char buf[256];
-	int cx;
-
-	if (ged_log_trace_enable) {
-		cx = snprintf(buf, sizeof(buf), "C|5566|%s|%d\n", name, count);
-		if (cx >= 0 && cx < sizeof(buf))
-			tracing_mark_write(buf);
-	}
-#endif
-}
-EXPORT_SYMBOL(ged_log_trace_counter);
-void ged_log_perf_trace_counter(char *name, long long count, int pid,
-	unsigned long frameID, u64 BQID)
-{
-	char buf[256];
-	int cx;
-
-	if (ged_log_perf_trace_enable) {
-		cx = snprintf(buf, sizeof(buf), "C|%d|%s|%lld|%llu|%lu\n",
-		pid, name, count, (unsigned long long)BQID, frameID);
-		if (cx >= 0 && cx < sizeof(buf))
-			tracing_mark_write(buf);
-	}
-}
-EXPORT_SYMBOL(ged_log_perf_trace_counter);
-
-void ged_log_perf_trace_batch_counter(char *name, long long count, int pid,
-	unsigned long frameID, u64 BQID, char *batch_str)
-{
-	char buf[256];
-	int cx;
-
-	if (ged_log_perf_trace_enable) {
-		cx = snprintf(buf, sizeof(buf), "C|%d|%s|%lld|%llu|%lu%s\n",
-		pid, name, count, (unsigned long long)BQID, frameID, batch_str);
-		if (cx >= 0 && cx < sizeof(buf))
-			tracing_mark_write(buf);
-	}
-}
-EXPORT_SYMBOL(ged_log_perf_trace_batch_counter);
-
-module_param(ged_log_trace_enable, uint, 0644);
-module_param(ged_log_perf_trace_enable, uint, 0644);
+module_param_cb(ged_log_perf_trace_enable, &ged_log_perf_trace_enable_ops,
+	&ged_log_perf_trace_enable, 0644);
