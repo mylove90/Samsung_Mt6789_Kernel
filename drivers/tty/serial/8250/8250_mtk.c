@@ -58,9 +58,6 @@
 #define MTK_UART_TX_TRIGGER	1
 #define MTK_UART_RX_TRIGGER	MTK_UART_RX_SIZE
 
-#define MTK_UART_XON1		40	/* I/O: Xon character 1 */
-#define MTK_UART_XOFF1		42	/* I/O: Xoff character 1 */
-
 #ifdef CONFIG_SERIAL_8250_DMA
 enum dma_rx_status {
 	DMA_RX_START = 0,
@@ -112,6 +109,21 @@ static void mtk8250_dma_rx_complete(void *param)
 	total = dma->rx_size - state.residue;
 	cnt = total;
 
+#ifdef CONFIG_SEC_DEBUG_PRINT_UART_TXRX
+	{
+		int count,i,j;
+		
+		pr_info(" %s: debugging: ",__func__);
+		
+		count = (cnt > 64) ? 64:cnt;
+		for(j=0, i=data->rx_pos; j < count; i++,j++)
+		{
+			i &= MTK_UART_RX_SIZE - 1;
+			pr_info("0x%02X", *((unsigned char*)dma->rx_buf+i));
+		}
+	}
+#endif
+
 	if ((data->rx_pos + cnt) > dma->rx_size)
 		cnt = dma->rx_size - data->rx_pos;
 
@@ -127,6 +139,12 @@ static void mtk8250_dma_rx_complete(void *param)
 	}
 
 	up->port.icount.rx += copied;
+
+#ifdef CONFIG_SEC_DEBUG_PRINT_UART_TXRX	
+	pr_info(" %s: rx complete ++ total[%d] data->rx_pos[%d] count[%d]\n",__func__, total, data->rx_pos, (cnt > 64)?64:cnt);
+	pr_info(" %s rx_size:%ld, copied:%d, state.residue:%d \n ",		__func__, dma->rx_size, copied, state.residue);
+	pr_info(" %s: rx complete --\n",__func__);
+#endif
 
 	tty_flip_buffer_push(tty_port);
 
@@ -177,7 +195,7 @@ static void mtk8250_dma_enable(struct uart_8250_port *up)
 		   MTK_UART_DMA_EN_RX | MTK_UART_DMA_EN_TX);
 
 	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
-	serial_out(up, MTK_UART_EFR, UART_EFR_ECB);
+	serial_out(up, UART_EFR, UART_EFR_ECB);
 	serial_out(up, UART_LCR, lcr);
 
 	if (dmaengine_slave_config(dma->rxchan, &dma->rxconf) != 0)
@@ -507,6 +525,8 @@ static int mtk8250_probe_of(struct platform_device *pdev, struct uart_port *p,
 #ifdef CONFIG_SERIAL_8250_DMA
 	int dmacnt;
 #endif
+	int uart_line = -1;
+	int err;
 
 	data->uart_clk = devm_clk_get(&pdev->dev, "baud");
 	if (IS_ERR(data->uart_clk)) {
@@ -521,6 +541,14 @@ static int mtk8250_probe_of(struct platform_device *pdev, struct uart_port *p,
 		}
 
 		return 0;
+	}
+
+	err = of_property_read_u32(pdev->dev.of_node, "uart_line", &uart_line);
+	if (err < 0) {
+		dev_info(&pdev->dev, "uart_line fail!!!\n");
+	} else {
+		data->line = uart_line;
+		pr_info("probe_uart: data->line: %d:\n", data->line);
 	}
 
 	data->bus_clk = devm_clk_get(&pdev->dev, "bus");
@@ -584,6 +612,7 @@ static int mtk8250_probe(struct platform_device *pdev)
 	spin_lock_init(&uart.port.lock);
 	uart.port.mapbase = regs->start;
 	uart.port.irq = irq;
+	uart.port.line = data->line;
 	uart.port.pm = mtk8250_do_pm;
 	uart.port.type = PORT_16550;
 	uart.port.flags = UPF_BOOT_AUTOCONF | UPF_FIXED_PORT;
@@ -601,10 +630,6 @@ static int mtk8250_probe(struct platform_device *pdev)
 		uart.dma = data->dma;
 #endif
 
-	/* Disable Rate Fix function */
-	writel(0x0, uart.port.membase +
-			(MTK_UART_RATE_FIX << uart.port.regshift));
-
 	platform_set_drvdata(pdev, data);
 
 	pm_runtime_enable(&pdev->dev);
@@ -612,9 +637,12 @@ static int mtk8250_probe(struct platform_device *pdev)
 	if (err)
 		goto err_pm_disable;
 
-	data->line = serial8250_register_8250_port(&uart);
-	if (data->line < 0) {
-		err = data->line;
+	/* Disable Rate Fix function */
+	writel(0x0, uart.port.membase +
+			(MTK_UART_RATE_FIX << uart.port.regshift));
+	err = serial8250_register_8250_port(&uart);
+	if (err < 0) {
+		pr_info("probe: err: %d: serial8250 register 8250 port fail!!!", err);
 		goto err_pm_disable;
 	}
 
