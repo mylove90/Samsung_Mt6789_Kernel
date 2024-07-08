@@ -31,6 +31,10 @@
 #include <linux/compiler.h>
 #include <linux/moduleparam.h>
 #include <linux/wakeup_reason.h>
+#if IS_ENABLED(CONFIG_SEC_PM)
+#include <linux/regulator/machine.h>
+#include <linux/clk/ti.h>
+#endif /* CONFIG_SEC_PM */
 
 #include "power.h"
 
@@ -404,6 +408,12 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 					 suspend_stats.failed_devs[last_dev]);
 		goto Platform_finish;
 	}
+
+#if IS_ENABLED(CONFIG_SEC_PM)
+	regulator_show_enabled();
+	sec_clock_debug_print_enabled();
+#endif /* CONFIG_SEC_PM */
+
 	error = platform_suspend_prepare_late(state);
 	if (error)
 		goto Devices_early_resume;
