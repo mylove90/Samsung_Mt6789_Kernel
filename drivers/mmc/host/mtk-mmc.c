@@ -13,6 +13,11 @@
 #include <mt-plat/dvfsrc-exp.h>
 #include <mt-plat/mtk_blocktag.h>
 
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+#include "mmc-sec-feature.h"
+#define HOST_MIN_CLK 300000
+#endif
+
 static int msdc_execute_tuning(struct mmc_host *mmc, u32 opcode);
 
 static const struct mtk_mmc_compatible mt8135_compat = {
@@ -878,6 +883,11 @@ static void msdc_request_done(struct msdc_host *host, struct mmc_request *mrq)
 		mmc_mtk_biolog_transfer_req_compl(mmc_from_priv(host), 0, 0);
 		mmc_mtk_biolog_check(mmc_from_priv(host), 0);
 	}
+
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+	sd_sec_check_req_err(host, mrq);
+#endif
+
 	mmc_request_done(mmc_from_priv(host), mrq);
 	if (host->dev_comp->recheck_sdio_irq)
 		msdc_recheck_sdio_irq(host);
@@ -1284,10 +1294,13 @@ static int msdc_ops_switch_volt(struct mmc_host *mmc, struct mmc_ios *ios)
 		}
 
 		/* Apply different pinctrl settings for different signal voltage */
-		if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180)
+		if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180) {
+			host->pins_state = PINS_UHS;
 			pinctrl_select_state(host->pinctrl, host->pins_uhs);
-		else
+		} else {
+			host->pins_state = PINS_DEFAULT;
 			pinctrl_select_state(host->pinctrl, host->pins_default);
+		}
 	}
 #endif
 	return 0;
@@ -1758,7 +1771,11 @@ static void msdc_ops_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		}
 
 		if (host->id == MSDC_SD) {
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+			if (host->mclk == HOST_MIN_CLK) {
+#else
 			if (host->mclk == 100000) {
+#endif
 				host->block_bad_card = 1;
 				pr_notice("[%s]: msdc%d power off at clk %dhz set block_bad_card = %d\n",
 					__func__, host->id, host->mclk,
@@ -2899,11 +2916,24 @@ static int msdc_drv_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Cannot find pinctrl uhs!\n");
 		goto host_free;
 	}
+
+	host->pins_pull_down = pinctrl_lookup_state(host->pinctrl, "pull_down");
+	if (IS_ERR(host->pins_pull_down)) {
+		ret = PTR_ERR(host->pins_pull_down);
+		dev_info(&pdev->dev, "Cannot find pinctrl pull_down!\n");
+		host->pins_pull_down = NULL;
+	}
 #endif
 
 	msdc_of_property_parse(pdev, host);
 
+	host->pins_state = PINS_DEFAULT;
+
 	if (host->id == MSDC_SD) {
+		mmc->caps |= MMC_CAP_CD_WAKE;
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+		mmc->caps2 |= MMC_CAP2_NO_PRESCAN_POWERUP;
+#endif
 		host->sd_oc.nb.notifier_call = msdc_sd_event;
 		INIT_WORK(&host->sd_oc.work, sdcard_oc_handler);
 	}
@@ -2921,11 +2951,14 @@ static int msdc_drv_probe(struct platform_device *pdev)
 #endif
 	/* Set host parameters to mmc */
 	mmc->ops = &mt_msdc_ops;
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+	mmc->f_min = HOST_MIN_CLK;
+#else
 	if (host->dev_comp->clk_div_bits == 8)
 		mmc->f_min = DIV_ROUND_UP(host->src_clk_freq, 4 * 255);
 	else
 		mmc->f_min = DIV_ROUND_UP(host->src_clk_freq, 4 * 4095);
-
+#endif
 	if (!(mmc->caps & MMC_CAP_NONREMOVABLE) &&
 	    !mmc_can_gpio_cd(mmc) &&
 	    host->dev_comp->use_internal_cd) {
@@ -3027,6 +3060,10 @@ static int msdc_drv_probe(struct platform_device *pdev)
 
 #if IS_ENABLED(CONFIG_RPMB)
 	ret = mmc_rpmb_register(mmc);
+#endif
+
+#if IS_ENABLED(CONFIG_SEC_MMC_FEATURE)
+	mmc_set_sec_features(pdev);
 #endif
 
 	return 0;
@@ -3293,6 +3330,10 @@ static int __maybe_unused msdc_runtime_suspend(struct device *dev)
 
 	set_mmc_perf_mode(mmc, false);
 
+	if (!(mmc->caps2 & MMC_CAP2_NO_SD))
+		if (host->pins_pull_down)
+			pinctrl_select_state(host->pinctrl, host->pins_pull_down);
+
 	return 0;
 }
 
@@ -3300,6 +3341,13 @@ static int __maybe_unused msdc_runtime_resume(struct device *dev)
 {
 	struct mmc_host *mmc = dev_get_drvdata(dev);
 	struct msdc_host *host = mmc_priv(mmc);
+
+	if (!(mmc->caps2 & MMC_CAP2_NO_SD)) {
+		if (host->pins_state == PINS_DEFAULT && host->pins_default)
+			pinctrl_select_state(host->pinctrl, host->pins_default);
+		else if (host->pins_state == PINS_UHS && host->pins_uhs)
+			pinctrl_select_state(host->pinctrl, host->pins_uhs);
+	}
 
 	cpu_latency_qos_update_request(&host->pm_qos_req, 0);
 	if (host->dvfsrc_vcore_power && host->req_vcore) {
@@ -3329,7 +3377,11 @@ static int __maybe_unused msdc_runtime_resume(struct device *dev)
 static int __maybe_unused msdc_suspend(struct device *dev)
 {
 	struct mmc_host *mmc = dev_get_drvdata(dev);
+	struct msdc_host *host = mmc_priv(mmc);
 	int ret;
+
+	dev_dbg(host->dev,"%s, GPIO set cd wake enable",__func__);
+	mmc_gpio_set_cd_wake(mmc, true);
 
 	if (mmc->caps2 & MMC_CAP2_CQE) {
 		ret = cqhci_suspend(mmc);
@@ -3342,6 +3394,12 @@ static int __maybe_unused msdc_suspend(struct device *dev)
 
 static int __maybe_unused msdc_resume(struct device *dev)
 {
+	struct mmc_host *mmc = dev_get_drvdata(dev);
+	struct msdc_host *host = mmc_priv(mmc);
+
+	dev_dbg(host->dev,"%s, GPIO set cd wake disable",__func__);
+	mmc_gpio_set_cd_wake(mmc, false);
+
 	return pm_runtime_force_resume(dev);
 }
 

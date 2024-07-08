@@ -1121,3 +1121,11 @@ config MMC_AUTOK
 	  Online Tune Interface. If you have a controller with this interface,
 	  say Y or M here.
 	  If unsure, say N.
+
+config SEC_MMC_FEATURE
+	tristate "SEC specific MMC/SD feature"
+	depends on MMC_MTK_PRO
+	help
+	  Enable Samsung MMC/SD feature support.
+	  Enabling this allows kernel to use SEC specific feature
+	  defined and implemented by SEC.

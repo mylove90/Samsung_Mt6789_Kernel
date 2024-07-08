@@ -2030,6 +2030,9 @@ unsigned int mmc_calc_max_discard(struct mmc_card *card)
 	struct mmc_host *host = card->host;
 	unsigned int max_discard, max_trim;
 
+	if (!host->max_busy_timeout)
+		return UINT_MAX;
+
 	/*
 	 * Without erase_group_def set, MMC erase timeout depends on clock
 	 * frequence which can change.  In that case, the best choice is
@@ -2211,6 +2214,7 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 	if (ret) {
 		mmc_card_set_removed(host->card);
 		pr_debug("%s: card remove detected\n", mmc_hostname(host));
+		ST_LOG("<%s> %s: card/tray remove detected\n", __func__, mmc_hostname(host));
 	}
 
 	return ret;
@@ -2305,6 +2309,7 @@ void mmc_rescan(struct work_struct *work)
 	mmc_claim_host(host);
 	if (mmc_card_is_removable(host) && host->ops->get_cd &&
 			host->ops->get_cd(host) == 0) {
+		pr_err("%s: no detect irq, skipping %s\n", mmc_hostname(host), __func__);
 		mmc_power_off(host);
 		mmc_release_host(host);
 		goto out;
