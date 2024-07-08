@@ -22,6 +22,7 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <trace/hooks/mm.h>
 
 #include "page_pool.h"
 #include "deferred-free-helper.h"
@@ -66,11 +67,11 @@ struct system_heap_buffer {
 };
 
 #define LOW_ORDER_GFP (GFP_HIGHUSER | __GFP_ZERO | __GFP_COMP)
-#define MID_ORDER_GFP (LOW_ORDER_GFP | __GFP_NOWARN)
+#define MID_ORDER_GFP (LOW_ORDER_GFP | __GFP_NOWARN & ~__GFP_RECLAIM)
 #define HIGH_ORDER_GFP  (((GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN \
 				| __GFP_NORETRY) & ~__GFP_RECLAIM) \
 				| __GFP_COMP)
-static gfp_t order_flags[] = {HIGH_ORDER_GFP, MID_ORDER_GFP, LOW_ORDER_GFP};
+static gfp_t order_flags[] = {HIGH_ORDER_GFP, HIGH_ORDER_GFP, LOW_ORDER_GFP};
 /*
  * The selection of the orders used for allocation (1MB, 64K, 4K) is designed
  * to match with the sizes often found in IOMMUs. Using order 4 pages instead
@@ -500,7 +501,7 @@ static void system_heap_buf_free(struct deferred_freelist_item *item,
 	struct system_heap_buffer *buffer;
 	struct sg_table *table;
 	struct scatterlist *sg;
-	int i, j;
+	unsigned int i, j;
 
 	buffer = container_of(item, struct system_heap_buffer, deferred_free);
 	/* Zero the buffer pages before adding back to the pool */
@@ -519,7 +520,12 @@ static void system_heap_buf_free(struct deferred_freelist_item *item,
 				if (compound_order(page) == orders[j])
 					break;
 			}
-			dmabuf_page_pool_free(pools[j], page);
+
+			if (j < NUM_ORDERS)
+				dmabuf_page_pool_free(pools[j], page);
+			else
+				pr_info("%s error: order %u\n",
+					__func__, compound_order(page));
 		}
 	}
 	sg_free_table(table);
@@ -575,8 +581,17 @@ static void system_heap_dma_buf_release(struct dma_buf *dmabuf)
 {
 	struct system_heap_buffer *buffer = dmabuf->priv;
 	int npages = PAGE_ALIGN(buffer->len) / PAGE_SIZE;
+	unsigned long buf_len = buffer->len;
+
+	dmabuf_release_check(dmabuf);
 
 	deferred_free(&buffer->deferred_free, system_heap_buf_free, npages);
+
+	if (atomic64_sub_return(buf_len, &dma_heap_normal_total) < 0) {
+		pr_info("warn: %s, total memory underflow, 0x%lx!!, reset as 0\n",
+			__func__, atomic64_read(&dma_heap_normal_total));
+		atomic64_set(&dma_heap_normal_total, 0);
+	}
 }
 
 static int system_heap_dma_buf_get_flags(struct dma_buf *dmabuf, unsigned long *flags)
@@ -624,7 +639,7 @@ static struct page *alloc_largest_available(unsigned long size,
 					    unsigned int max_order)
 {
 	struct page *page;
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < NUM_ORDERS; i++) {
 		if (size <  (PAGE_SIZE << orders[i]))
@@ -644,7 +659,7 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 					       unsigned long fd_flags,
 					       unsigned long heap_flags,
 					       bool uncached,
-						   const struct dma_buf_ops *ops)
+					       const struct dma_buf_ops *ops)
 {
 	struct system_heap_buffer *buffer;
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
@@ -752,7 +767,6 @@ free_buffer:
 	list_for_each_entry_safe(page, tmp_page, &pages, lru)
 		__free_pages(page, compound_order(page));
 	kfree(buffer);
-
 	return ERR_PTR(ret);
 }
 
@@ -929,6 +943,46 @@ static int set_heap_dev_dma(struct device *heap_dev)
 	return 0;
 }
 
+static void mtk_system_heap_show_mem(void *data, unsigned int filter, nodemask_t *nodemask)
+{
+	pr_info("%s: %ld kB\n", "System", atomic64_read(&dma_heap_normal_total) >> 10);
+}
+
+static void mtk_system_heap_meminfo(void *data, struct seq_file *m)
+{
+	show_val_meminfo(m, "System", atomic64_read(&dma_heap_normal_total) >> 10);
+}
+
+static inline long get_dma_heap_pool_total_kbytes(struct dma_heap *heap)
+{
+	if (!heap)
+		return 0;
+
+	return system_get_pool_size(heap) >> 10;
+}
+
+static void dma_heap_pool_show_mem(void *data, unsigned int filter, nodemask_t *nodemask)
+{
+	struct dma_heap *heap = (struct dma_heap *)data;
+	long total_kbytes = get_dma_heap_pool_total_kbytes(heap);
+
+	if (total_kbytes < 0)
+		return;
+
+	pr_info("%s: %ld kB\n", "DmaHeapPool", total_kbytes);
+}
+
+static void dma_heap_pool_meminfo(void *data, struct seq_file *m)
+{
+	struct dma_heap *heap = (struct dma_heap *)data;
+	long total_kbytes = get_dma_heap_pool_total_kbytes(heap);
+
+	if (total_kbytes < 0)
+		return;
+
+	show_val_meminfo(m, "DmaHeapPool", total_kbytes);
+}
+
 static int system_heap_create(void)
 {
 	struct dma_heap_export_info exp_info;
@@ -947,16 +1001,15 @@ static int system_heap_create(void)
 		}
 	}
 
-	exp_info.name = "system";
-	exp_info.ops = &system_heap_ops;
-
 	/* system & mtk_mm heap use same heap show */
 	exp_info.priv = (void *)&system_heap_priv;
+
+	exp_info.name = "system";
+	exp_info.ops = &system_heap_ops;
 
 	sys_heap = dma_heap_add(&exp_info);
 	if (IS_ERR(sys_heap))
 		return PTR_ERR(sys_heap);
-
 	pr_info("%s add heap[%s] success\n", __func__, exp_info.name);
 
 	exp_info.name = "mtk_mm";
@@ -995,6 +1048,15 @@ static int system_heap_create(void)
 	mb(); /* make sure we only set allocate after dma_mask is set */
 	mtk_mm_uncached_heap_ops.allocate = mtk_mm_uncached_heap_allocate;
 	pr_info("%s add heap[%s] success\n", __func__, exp_info.name);
+
+	/* Add to vendor hooks system heap size */
+	register_trace_android_vh_show_mem(mtk_system_heap_show_mem, NULL);
+	register_trace_android_vh_meminfo_proc_show(mtk_system_heap_meminfo, NULL);
+
+	/* Add to vendor hooks dmabuf pool size */
+	register_trace_android_vh_show_mem(dma_heap_pool_show_mem, (void *)sys_heap);
+	register_trace_android_vh_meminfo_proc_show(dma_heap_pool_meminfo, (void *)sys_heap);
+
 	return 0;
 }
 
