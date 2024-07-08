@@ -55,6 +55,8 @@
 #define U3P_USBPHYACR1		0x004
 #define PA1_RG_INTR_CAL		GENMASK(23, 19)
 #define PA1_RG_INTR_CAL_VAL(x)	((0x1f & (x)) << 19)
+#define PA1_RG_INTR_CAL_OFST	(19)
+#define PA1_RG_U2_PHY_INTR_MASK	(0x1f)
 #define PA1_RG_VRT_SEL			GENMASK(14, 12)
 #define PA1_RG_VRT_SEL_VAL(x)	((0x7 & (x)) << 12)
 #define PA1_RG_VRT_SEL_MASK	(0x7)
@@ -339,6 +341,7 @@
 #define TERM_SEL_STR "term_sel"
 #define VRT_SEL_STR "vrt_sel"
 #define PHY_REV4_STR "phy_rev4"
+#define PHY_INTR_STR "phy_intr"
 #define PHY_REV6_STR "phy_rev6"
 #define DISCTH_STR "discth"
 #define RX_SQTH_STR "rx_sqth"
@@ -419,6 +422,10 @@ struct mtk_phy_instance {
 	int eye_vrt_host;
 	int eye_term_host;
 	int rev6_host;
+	int rev4_host;
+	int rx_sqth_host;
+	int discth_host;
+	int intr_host;
 	struct proc_dir_entry *phy_root;
 };
 
@@ -781,6 +788,8 @@ static ssize_t proc_term_sel_write(struct file *file,
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
 
+	instance->eye_term = val;
+
 	tmp = readl(com + U3P_USBPHYACR1);
 	tmp &= ~PA1_RG_TERM_SEL;
 	tmp |= PA1_RG_TERM_SEL_VAL(val);
@@ -836,6 +845,8 @@ static ssize_t proc_vrt_sel_write(struct file *file,
 
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
+
+	instance->eye_vrt = val;
 
 	tmp = readl(com + U3P_USBPHYACR1);
 	tmp &= ~PA1_RG_VRT_SEL;
@@ -893,6 +904,8 @@ static ssize_t proc_phy_rev4_write(struct file *file,
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
 
+	instance->rev4 = val;
+
 	tmp = readl(com + U3P_USBPHYACR6);
 	tmp &= ~PA6_RG_U2_PHY_REV4;
 	tmp |= PA6_RG_U2_PHY_REV4_VAL(val);
@@ -904,6 +917,63 @@ static ssize_t proc_phy_rev4_write(struct file *file,
 static const struct proc_ops proc_phy_rev4_fops = {
 	.proc_open = proc_phy_rev4_open,
 	.proc_write = proc_phy_rev4_write,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
+
+static int proc_phy_intr_show(struct seq_file *s, void *unused)
+{
+	struct mtk_phy_instance *instance = s->private;
+	struct u2phy_banks *u2_banks = &instance->u2_banks;
+	void __iomem *com = u2_banks->com;
+	u32 tmp;
+	char str[16];
+
+	tmp = readl(com + U3P_USBPHYACR1);
+	tmp >>= PA1_RG_INTR_CAL_OFST;
+	tmp &= PA1_RG_U2_PHY_INTR_MASK;
+
+	cover_val_to_str(tmp, 5, str);
+
+	seq_printf(s, "\n%s = %s\n", PHY_INTR_STR, str);
+	return 0;
+}
+
+static int proc_phy_intr_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_phy_intr_show, PDE_DATA(inode));
+}
+
+static ssize_t proc_phy_intr_write(struct file *file,
+	const char __user *ubuf, size_t count, loff_t *ppos)
+{
+	struct seq_file *s = file->private_data;
+	struct mtk_phy_instance *instance = s->private;
+	struct u2phy_banks *u2_banks = &instance->u2_banks;
+	char buf[20];
+	u32 tmp, val;
+
+	memset(buf, 0x00, sizeof(buf));
+	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
+		return -EFAULT;
+
+	if (kstrtouint(buf, 2, &val))
+		return -EINVAL;
+
+	instance->intr = val;
+
+	tmp = readl(u2_banks->com + U3P_USBPHYACR1);
+	tmp &= ~PA1_RG_INTR_CAL;
+	tmp |= PA1_RG_INTR_CAL_VAL(val);
+	writel(tmp, u2_banks->com + U3P_USBPHYACR1);
+
+	return count;
+}
+
+static const struct proc_ops proc_phy_intr_fops = {
+	.proc_open = proc_phy_intr_open,
+	.proc_write = proc_phy_intr_write,
 	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
@@ -948,6 +1018,8 @@ static ssize_t proc_phy_rev6_write(struct file *file,
 
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
+
+	instance->rev6 = val;
 
 	tmp = readl(com + U3P_USBPHYACR6);
 	tmp &= ~PA6_RG_U2_PHY_REV6;
@@ -1005,6 +1077,8 @@ static ssize_t proc_discth_write(struct file *file,
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
 
+	instance->discth = val;
+
 	tmp = readl(com + U3P_USBPHYACR6);
 	tmp &= ~PA6_RG_U2_DISCTH;
 	tmp |= PA6_RG_U2_DISCTH_VAL(val);
@@ -1060,6 +1134,8 @@ static ssize_t proc_rx_sqth_write(struct file *file,
 
 	if (kstrtouint(buf, 2, &val))
 		return -EINVAL;
+
+	instance->rx_sqth = val;
 
 	tmp = readl(com + U3P_USBPHYACR6);
 	tmp &= ~PA6_RG_U2_SQTH;
@@ -1118,6 +1194,14 @@ static int u2_phy_procfs_init(struct mtk_tphy *tphy,
 			phy_root, &proc_phy_rev4_fops, instance);
 	if (!file) {
 		dev_info(dev, "failed to creat proc file: %s\n", PHY_REV4_STR);
+		ret = -ENOMEM;
+		goto err1;
+	}
+
+	file = proc_create_data(PHY_INTR_STR, 0644,
+			phy_root, &proc_phy_intr_fops, instance);
+	if (!file) {
+		dev_info(dev, "failed to creat proc file: %s\n", PHY_INTR_STR);
 		ret = -ENOMEM;
 		goto err1;
 	}
@@ -1274,7 +1358,7 @@ static void hs_slew_rate_calibrate(struct mtk_tphy *tphy,
 	u32 tmp;
 
 	/* use force value */
-	if (instance->eye_src)
+	if (instance->eye_src >= 0)
 		return;
 
 	/* enable USB ring oscillator */
@@ -1973,39 +2057,84 @@ static void phy_parse_property(struct mtk_tphy *tphy,
 				struct mtk_phy_instance *instance)
 {
 	struct device *dev = &instance->phy->dev;
+	int ret = 0;
 
 	if (instance->type != PHY_TYPE_USB2)
 		return;
 
 	instance->bc12_en = device_property_read_bool(dev, "mediatek,bc12");
-	device_property_read_u32(dev, "mediatek,eye-src",
+	ret = device_property_read_u32(dev, "mediatek,eye-src",
 				 &instance->eye_src);
-	device_property_read_u32(dev, "mediatek,eye-vrt",
+	if (ret < 0)
+		instance->eye_src = -1;
+	ret = device_property_read_u32(dev, "mediatek,eye-vrt",
 				 &instance->eye_vrt);
-	device_property_read_u32(dev, "mediatek,eye-term",
+	if (ret < 0)
+		instance->eye_vrt = -1;
+	ret = device_property_read_u32(dev, "mediatek,eye-term",
 				 &instance->eye_term);
-	device_property_read_u32(dev, "mediatek,intr",
+	if (ret < 0)
+		instance->eye_term = -1;
+	ret = device_property_read_u32(dev, "mediatek,intr",
 				 &instance->intr);
-	device_property_read_u32(dev, "mediatek,discth",
+	if (ret < 0)
+		instance->intr = -1;
+	ret = device_property_read_u32(dev, "mediatek,discth",
 				 &instance->discth);
-	device_property_read_u32(dev, "mediatek,rx_sqth",
+	if (ret < 0)
+		instance->discth = -1;
+	ret = device_property_read_u32(dev, "mediatek,rx_sqth",
 				 &instance->rx_sqth);
-	device_property_read_u32(dev, "mediatek,rev4",
+	if (ret < 0)
+		instance->rx_sqth = -1;
+	ret = device_property_read_u32(dev, "mediatek,rev4",
 				 &instance->rev4);
-	device_property_read_u32(dev, "mediatek,rev6",
+	if (ret < 0)
+		instance->rev4 = -1;
+	ret = device_property_read_u32(dev, "mediatek,rev6",
 				 &instance->rev6);
-	device_property_read_u32(dev, "mediatek,eye-src-host",
+	if (ret < 0)
+		instance->rev6 = -1;
+	ret = device_property_read_u32(dev, "mediatek,eye-src-host",
 				 &instance->eye_src_host);
-	device_property_read_u32(dev, "mediatek,eye-vrt-host",
+	if (ret < 0)
+		instance->eye_src_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,eye-vrt-host",
 				 &instance->eye_vrt_host);
-	device_property_read_u32(dev, "mediatek,eye-term-host",
+	if (ret < 0)
+		instance->eye_vrt_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,eye-term-host",
 				 &instance->eye_term_host);
-	device_property_read_u32(dev, "mediatek,rev6-host",
+	if (ret < 0)
+		instance->eye_term_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,rev6-host",
 				&instance->rev6_host);
-	device_property_read_u32(dev, "mediatek,pll-bw",
+	if (ret < 0)
+		instance->rev6_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,rev4-host",
+				 &instance->rev4_host);
+	if (ret < 0)
+		instance->rev4_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,rx_sqth-host",
+				 &instance->rx_sqth_host);
+	if (ret < 0)
+		instance->rx_sqth_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,discth-host",
+				 &instance->discth_host);
+	if (ret < 0)
+		instance->discth_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,intr-host",
+				 &instance->intr_host);
+	if (ret < 0)
+		instance->intr_host = -1;
+	ret = device_property_read_u32(dev, "mediatek,pll-bw",
 				&instance->pll_bw);
-	device_property_read_u32(dev, "mediatek,bgr-div",
+	if (ret < 0)
+		instance->pll_bw = -1;
+	ret = device_property_read_u32(dev, "mediatek,bgr-div",
 				&instance->bgr_div);
+	if (ret < 0)
+		instance->bgr_div = -1;
 	dev_dbg(dev, "bc12:%d, src:%d, vrt:%d, term:%d, intr:%d\n",
 		instance->bc12_en, instance->eye_src,
 		instance->eye_vrt, instance->eye_term, instance->intr);
@@ -2041,70 +2170,70 @@ static void u2_phy_props_set(struct mtk_tphy *tphy,
 		writel(tmp, com + U3P_U2PHYBC12C);
 	}
 
-	if (instance->eye_src) {
+	if (instance->eye_src >= 0) {
 		tmp = readl(com + U3P_USBPHYACR5);
 		tmp &= ~PA5_RG_U2_HSTX_SRCTRL;
 		tmp |= PA5_RG_U2_HSTX_SRCTRL_VAL(instance->eye_src);
 		writel(tmp, com + U3P_USBPHYACR5);
 	}
 
-	if (instance->eye_vrt) {
+	if (instance->eye_vrt >= 0) {
 		tmp = readl(com + U3P_USBPHYACR1);
 		tmp &= ~PA1_RG_VRT_SEL;
 		tmp |= PA1_RG_VRT_SEL_VAL(instance->eye_vrt);
 		writel(tmp, com + U3P_USBPHYACR1);
 	}
 
-	if (instance->eye_term) {
+	if (instance->eye_term >= 0) {
 		tmp = readl(com + U3P_USBPHYACR1);
 		tmp &= ~PA1_RG_TERM_SEL;
 		tmp |= PA1_RG_TERM_SEL_VAL(instance->eye_term);
 		writel(tmp, com + U3P_USBPHYACR1);
 	}
 
-	if (instance->intr) {
+	if (instance->intr >= 0) {
 		tmp = readl(com + U3P_USBPHYACR1);
 		tmp &= ~PA1_RG_INTR_CAL;
 		tmp |= PA1_RG_INTR_CAL_VAL(instance->intr);
 		writel(tmp, com + U3P_USBPHYACR1);
 	}
 
-	if (instance->discth) {
+	if (instance->discth >= 0) {
 		tmp = readl(com + U3P_USBPHYACR6);
 		tmp &= ~PA6_RG_U2_DISCTH;
 		tmp |= PA6_RG_U2_DISCTH_VAL(instance->discth);
 		writel(tmp, com + U3P_USBPHYACR6);
 	}
 
-	if (instance->rx_sqth) {
+	if (instance->rx_sqth >= 0) {
 		tmp = readl(com + U3P_USBPHYACR6);
 		tmp &= ~PA6_RG_U2_SQTH;
 		tmp |= PA6_RG_U2_SQTH_VAL(instance->rx_sqth);
 		writel(tmp, com + U3P_USBPHYACR6);
 	}
 
-	if (instance->rev4) {
+	if (instance->rev4 >= 0) {
 		tmp = readl(com + U3P_USBPHYACR6);
 		tmp &= ~PA6_RG_U2_PHY_REV4;
 		tmp |= PA6_RG_U2_PHY_REV4_VAL(instance->rev4);
 		writel(tmp, com + U3P_USBPHYACR6);
 	}
 
-	if (instance->rev6) {
+	if (instance->rev6 >= 0) {
 		tmp = readl(com + U3P_USBPHYACR6);
 		tmp &= ~PA6_RG_U2_PHY_REV6;
 		tmp |= PA6_RG_U2_PHY_REV6_VAL(instance->rev6);
 		writel(tmp, com + U3P_USBPHYACR6);
 	}
 
-	if (instance->pll_bw) {
+	if (instance->pll_bw >= 0) {
 		tmp = readl(com + U3P_USBPHYACR2);
 		tmp &= ~PA2_RG_USB20_PLL_BW;
 		tmp |= PA2_RG_USB20_PLL_BW_VAL(instance->pll_bw);
 		writel(tmp, com + U3P_USBPHYACR2);
 	}
 
-	if (instance->bgr_div) {
+	if (instance->bgr_div >= 0) {
 		tmp = readl(com + U3P_USBPHYACR0);
 		tmp &= ~PA0_RG_USB20_BGR_DIV;
 		tmp |= PA0_RG_USB20_BGR_DIV_VAL(instance->bgr_div);
@@ -2119,33 +2248,69 @@ static void u2_phy_host_props_set(struct mtk_tphy *tphy,
 	struct u2phy_banks *u2_banks = &instance->u2_banks;
 	void __iomem *com = u2_banks->com;
 	u32 tmp;
+	struct device *dev = &instance->phy->dev;
 
-	if (instance->eye_src_host) {
+	dev_info(dev, "%s: src:%d, vrt:%d, term:%d, intr:%d,\
+		rev4:%d, rev6:%d, rx_sqth:%d, discth:%d\n", __func__,
+		instance->eye_src_host, instance->eye_vrt_host,
+		instance->eye_term_host, instance->intr_host,
+		instance->rev4_host, instance->rev6_host,
+		instance->rx_sqth_host,	instance->discth_host);
+
+	if (instance->eye_src_host >= 0) {
 		tmp = readl(com + U3P_USBPHYACR5);
 		tmp &= ~PA5_RG_U2_HSTX_SRCTRL;
-		tmp |= PA5_RG_U2_HSTX_SRCTRL_VAL(instance->eye_src);
+		tmp |= PA5_RG_U2_HSTX_SRCTRL_VAL(instance->eye_src_host);
 		writel(tmp, com + U3P_USBPHYACR5);
 	}
 
-	if (instance->eye_vrt_host) {
+	if (instance->eye_vrt_host >= 0) {
 		tmp = readl(com + U3P_USBPHYACR1);
 		tmp &= ~PA1_RG_VRT_SEL;
-		tmp |= PA1_RG_VRT_SEL_VAL(instance->eye_vrt);
+		tmp |= PA1_RG_VRT_SEL_VAL(instance->eye_vrt_host);
 		writel(tmp, com + U3P_USBPHYACR1);
 	}
 
-	if (instance->eye_term_host) {
+	if (instance->eye_term_host >= 0) {
 		tmp = readl(com + U3P_USBPHYACR1);
 		tmp &= ~PA1_RG_TERM_SEL;
-		tmp |= PA1_RG_TERM_SEL_VAL(instance->eye_term);
+		tmp |= PA1_RG_TERM_SEL_VAL(instance->eye_term_host);
 		writel(tmp, com + U3P_USBPHYACR1);
 	}
 
-	if (instance->rev6_host) {
+	if (instance->rev6_host >= 0) {
 		tmp = readl(com + U3P_USBPHYACR6);
 		tmp &= ~PA6_RG_U2_PHY_REV6;
-		tmp |= PA6_RG_U2_PHY_REV6_VAL(instance->rev6);
+		tmp |= PA6_RG_U2_PHY_REV6_VAL(instance->rev6_host);
 		writel(tmp, com + U3P_USBPHYACR6);
+	}
+
+	if (instance->rev4_host >= 0) {
+		tmp = readl(com + U3P_USBPHYACR6);
+		tmp &= ~PA6_RG_U2_PHY_REV4;
+		tmp |= PA6_RG_U2_PHY_REV4_VAL(instance->rev4_host);
+		writel(tmp, com + U3P_USBPHYACR6);
+	}
+
+	if (instance->rx_sqth_host >= 0) {
+		tmp = readl(com + U3P_USBPHYACR6);
+		tmp &= ~PA6_RG_U2_SQTH;
+		tmp |= PA6_RG_U2_SQTH_VAL(instance->rx_sqth_host);
+		writel(tmp, com + U3P_USBPHYACR6);
+	}
+
+	if (instance->discth_host >= 0) {
+		tmp = readl(com + U3P_USBPHYACR6);
+		tmp &= ~PA6_RG_U2_DISCTH;
+		tmp |= PA6_RG_U2_DISCTH_VAL(instance->discth_host);
+		writel(tmp, com + U3P_USBPHYACR6);
+	}
+
+	if (instance->intr_host >= 0) {
+		tmp = readl(com + U3P_USBPHYACR1);
+		tmp &= ~PA1_RG_INTR_CAL;
+		tmp |= PA1_RG_INTR_CAL_VAL(instance->intr_host);
+		writel(tmp, com + U3P_USBPHYACR1);
 	}
 }
 
