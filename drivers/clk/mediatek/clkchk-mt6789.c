@@ -403,7 +403,10 @@ void print_subsys_reg_mt6789(enum chk_sys_id id)
 	const struct regname *rns = &rn[0];
 	int i;
 
-	if (id >= chk_sys_num) {
+	if (rns == NULL)
+		return;
+
+	if (id >= chk_sys_num || id < 0) {
 		pr_info("wrong id:%d\n", id);
 		return;
 	}
@@ -447,14 +450,13 @@ static const char * const off_pll_names[] = {
 	"npupll",
 	"mfgpll",
 	"tvdpll",
-	"apll1",
-	"apll2",
 	"usbpll",
 	NULL
 };
 
 static const char * const notice_pll_names[] = {
-
+	"apll1",
+	"apll2",
 	NULL
 };
 
