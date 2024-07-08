@@ -4045,10 +4045,6 @@ static int mtk_cam_link_notify(struct media_link *link, u32 flags,
 
 	cam_req = to_mtk_cam_req(req);
 	stream_data = mtk_cam_req_get_s_data_no_chk(cam_req, ctx->stream_id, 0);
-	if (!stream_data) {
-		dev_info(cam->dev, "%s: stream data is null\n",
-	__func__);
-	}
 	stream_data->seninf_old = ctx->seninf;
 	stream_data->seninf_new = media_entity_to_v4l2_subdev(source);
 	stream_data->sensor = mtk_cam_find_sensor(ctx, &stream_data->seninf_new->entity);
@@ -4284,14 +4280,7 @@ void mstream_seamless_buf_update(struct mtk_cam_ctx *ctx,
 
 	pr_info("%s cur_feature(%d) prev_feature(%d) main_stream_size(%d)",
 		__func__, current_feature, previous_feature, main_stream_size);
-	if (!frame_param) {
-		pr_info("%s: frame_param is null\n)",
-		__func__);
-	}
-	if (!mstream_frame_param) {
-		pr_info("%s: mstream_frame_param is null\n)",
-		__func__);
-	}
+
 	/* backup first because main stream buffer is already assigned */
 	iova = frame_param->img_outs[desc_id].buf[0][0].iova;
 	ccd_fd = frame_param->img_outs[desc_id].buf[0][0].ccd_fd;
@@ -4317,6 +4306,7 @@ void mstream_seamless_buf_update(struct mtk_cam_ctx *ctx,
 	frame_param->img_outs[desc_id].buf[0][0].size = main_stream_size;
 	frame_param->img_outs[desc_id].buf[0][0].ccd_fd = ccd_fd;
 	frame_param->raw_param.imgo_path_sel = imgo_path_sel;
+
 	if (current_feature == MSTREAM_NE_SE) {
 		mstream_frame_param->raw_param.exposure_num = 1;
 		frame_param->raw_param.exposure_num = 2;
@@ -5111,10 +5101,14 @@ static void isp_tx_frame_worker(struct work_struct *work)
 	frame_data->cur_workbuf_size = buf_entry->buffer.size;
 
 	res_user = mtk_cam_s_data_get_res(req_stream_data);
-	if (ctx->pipe->res_config.bin_limit == BIN_OFF)
-		frame_data->raw_param.bin_flag = BIN_OFF;
-	else
-		frame_data->raw_param.bin_flag = ctx->pipe->res_config.bin_limit;
+	if (res_user && res_user->raw_res.bin) {
+		frame_data->raw_param.bin_flag = res_user->raw_res.bin;
+	} else {
+		if (ctx->pipe->res_config.bin_limit == BIN_AUTO)
+			frame_data->raw_param.bin_flag = ctx->pipe->res_config.bin_enable;
+		else
+			frame_data->raw_param.bin_flag = ctx->pipe->res_config.bin_limit;
+	}
 
 	if (ctx->rpmsg_dev) {
 		MTK_CAM_TRACE_BEGIN(BASIC, "ipi_cmd_frame:%d",
@@ -5198,7 +5192,7 @@ void mtk_cam_sensor_switch_stop_reinit_hw(struct mtk_cam_ctx *ctx,
 	struct mtk_cam_device *cam = ctx->cam;
 	struct mtk_cam_request *req;
 	struct mtk_cam_req_raw_pipe_data *s_raw_pipe_data;
-	struct mtk_raw_device *raw_dev = NULL;
+	struct mtk_raw_device *raw_dev;
 	struct mtk_camsv_device *sv_dev;
 	struct mtk_mraw_device *mraw_dev;
 	int i;
@@ -5233,9 +5227,6 @@ void mtk_cam_sensor_switch_stop_reinit_hw(struct mtk_cam_ctx *ctx,
 					 ctx->seninf->name, ret);
 		}
 		raw_dev = get_master_raw_dev(ctx->cam, ctx->pipe);
-		if (!raw_dev)
-			dev_info(cam->dev,
-					 "%s: raw_dev is null\n", __func__);
 		if (mtk_cam_is_time_shared(ctx)) {
 			unsigned int hw_scen =
 				(1 << MTKCAM_IPI_HW_PATH_OFFLINE_M2M);
@@ -6417,8 +6408,12 @@ static int mtk_cam_power_ctrl_ccu(struct device *dev, int on_off)
 		if (ret)
 			dev_info(dev, "boot ccu rproc fail\n");
 
-		if (dvfs_info->reg_vmm)
-			regulator_enable(dvfs_info->reg_vmm);
+		if (dvfs_info->reg_vmm) {
+			ret = regulator_enable(dvfs_info->reg_vmm);
+			if (ret < 0)
+				dev_info(dev, "regulator_enable fail with return val: %d\n",
+					regulator_enable(dvfs_info->reg_vmm));
+		}
 	} else {
 		if (dvfs_info->reg_vmm && regulator_is_enabled(dvfs_info->reg_vmm))
 			regulator_disable(dvfs_info->reg_vmm);
