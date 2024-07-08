@@ -1717,6 +1717,36 @@ static int mtk_i2c_resume_noirq(struct device *dev)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+int stui_i2c_lock(struct i2c_adapter *adap)
+{
+	struct mtk_i2c *i2c = i2c_get_adapdata(adap);
+	int ret;
+
+	i2c_lock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+	ret = mtk_i2c_clock_enable(i2c);
+	if (ret) {
+		dev_err(i2c->dev, "clock enable failed!\n");
+		i2c_unlock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(stui_i2c_lock);
+
+int stui_i2c_unlock(struct i2c_adapter *adap)
+{
+	struct mtk_i2c *i2c = i2c_get_adapdata(adap);
+
+	mtk_i2c_clock_disable(i2c);
+	i2c_unlock_bus(adap, I2C_LOCK_ROOT_ADAPTER);
+
+	return 0;
+}
+EXPORT_SYMBOL(stui_i2c_unlock);
+#endif
+
 static const struct dev_pm_ops mtk_i2c_pm = {
 	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(mtk_i2c_suspend_noirq,
 				      mtk_i2c_resume_noirq)
