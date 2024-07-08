@@ -88,7 +88,10 @@ static int fops_vcodec_open(struct file *file)
 
 	mutex_lock(&dev->dev_mutex);
 	ctx->dec_flush_buf = mtk_buf;
-	ctx->id = dev->id_counter++;
+	dev->id_counter++;
+	if (dev->id_counter == 0)
+		dev->id_counter++;
+	ctx->id = dev->id_counter;
 	v4l2_fh_init(&ctx->fh, video_devdata(file));
 	file->private_data = &ctx->fh;
 	v4l2_fh_add(&ctx->fh);
@@ -389,6 +392,11 @@ static int mtk_vcodec_dec_probe(struct platform_device *pdev)
 		goto err_res;
 	}
 
+	ret = of_property_read_u32(pdev->dev.of_node, "svp-mtee", &dev->svp_mtee);
+	if (ret)
+		mtk_v4l2_debug(0, "[VDEC] Cannot get svp-mtee, skip");
+
+
 	ret = mtk_vcodec_dec_irq_setup(pdev, dev);
 	if (ret)
 		goto err_res;
@@ -403,8 +411,6 @@ static int mtk_vcodec_dec_probe(struct platform_device *pdev)
 	mutex_init(&dev->ipi_mutex);
 	mutex_init(&dev->ipi_mutex_res);
 	mutex_init(&dev->dec_dvfs_mutex);
-	mutex_init(&dev->log_param_mutex);
-	mutex_init(&dev->prop_param_mutex);
 	spin_lock_init(&dev->irqlock);
 
 	snprintf(dev->v4l2_dev.name, sizeof(dev->v4l2_dev.name), "%s",

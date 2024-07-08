@@ -21,7 +21,7 @@
 // TODO: need remove ISR ipis
 #include "mtk_vcodec_intr.h"
 
-#ifdef CONFIG_MTK_ENG_BUILD
+#if IS_ENABLED(CONFIG_MTK_ENG_BUILD)
 #define IPI_TIMEOUT_MS          (10000U)
 #else
 #define IPI_TIMEOUT_MS          (5000U + ((mtk_vcodec_dbg | mtk_v4l2_dbg_level) ? 5000U : 0U))
@@ -552,7 +552,7 @@ int vcp_dec_ipi_handler(void *arg)
 		list_for_each_safe(p, q, &dev->ctx_list) {
 			temp_ctx = list_entry(p, struct mtk_vcodec_ctx, list);
 			inst = (struct vdec_inst *)temp_ctx->drv_handle;
-			if (inst != NULL && vcu == &inst->vcu) {
+			if (inst != NULL && vcu == &inst->vcu && vcu->ctx == temp_ctx) {
 				msg_valid = 1;
 				break;
 			}
