@@ -1125,6 +1125,59 @@ static int mtk_spi_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+int stui_spi_lock(struct spi_master *spi)
+{
+	int ret = 0;
+	struct mtk_spi *mdata = spi_master_get_devdata(spi);
+
+	(void)mdata;
+	(void)ret;
+
+	spi_bus_lock(spi);
+
+	pr_info("STUI stui_spi_lock() enter\n");
+
+	if (mdata->dev_comp->no_need_unprepare)
+		ret = clk_enable(mdata->spi_clk);
+	else
+		ret = clk_prepare_enable(mdata->spi_clk);
+
+	if (ret < 0) {
+		pr_err("STUI failed to enable spi_clk (%d)\n", ret);
+		spi_bus_unlock(spi);
+		return ret;
+	}
+
+	pr_info("STUI stui_spi_lock() exit\n");
+	return ret;
+}
+EXPORT_SYMBOL(stui_spi_lock);
+
+int stui_spi_unlock(struct spi_master *spi)
+{
+	int ret = 0;
+	struct mtk_spi *mdata;
+
+	(void)mdata;
+	(void)ret;
+
+	pr_info("STUI stui_spi_unlock() enter\n");
+
+	mdata = spi_master_get_devdata(spi);
+	if (mdata->dev_comp->no_need_unprepare)
+		clk_disable(mdata->spi_clk);
+	else
+		clk_disable_unprepare(mdata->spi_clk);
+
+	spi_bus_unlock(spi);
+
+	pr_info("STUI stui_spi_unlock() exit\n");
+	return 0;
+}
+EXPORT_SYMBOL(stui_spi_unlock);
+#endif
+
 void mt_spi_disable_master_clk(struct spi_device *spidev)
 {
 	struct mtk_spi *ms;
