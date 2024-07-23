@@ -9,6 +9,7 @@
 static const int regulator_voltage[] = {
 	REGULATOR_VOLTAGE_0,
 	REGULATOR_VOLTAGE_1000,
+	REGULATOR_VOLTAGE_1050,
 	REGULATOR_VOLTAGE_1100,
 	REGULATOR_VOLTAGE_1200,
 	REGULATOR_VOLTAGE_1210,
@@ -25,6 +26,7 @@ struct REGULATOR_CTRL regulator_control[REGULATOR_TYPE_MAX_NUM] = {
 	{"vcama1"},
 	{"vcamaf"},
 	{"vcamd"},
+	{"vcamd1"},
 	{"vcamio"},
 };
 
@@ -131,18 +133,12 @@ static enum IMGSENSOR_RETURN regulator_set(
 				regulator_voltage[
 				pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0])) {
 
-				PK_DBG(
-				  "[regulator]fail to regulator_set_voltage, powertype:%d powerId:%d\n",
-				  pin,
-				  regulator_voltage[
-				  pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0]);
+				PK_PR_ERR("[regulator]fail to regulator_set_voltage, powertype:%d powerId:%d\n",
+						pin, regulator_voltage[pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0]);
 			}
 			if (regulator_enable(pregulator)) {
-				PK_DBG(
-				"[regulator]fail to regulator_enable, powertype:%d powerId:%d\n",
-				pin,
-				regulator_voltage[
-				  pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0]);
+				PK_PR_ERR("[regulator]fail to regulator_enable, powertype:%d powerId:%d\n",
+						pin, regulator_voltage[pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0]);
 				return IMGSENSOR_RETURN_ERROR;
 			}
 			atomic_inc(enable_cnt);
@@ -151,13 +147,15 @@ static enum IMGSENSOR_RETURN regulator_set(
 				PK_DBG("[regulator]%d is enabled\n", pin);
 
 			if (regulator_disable(pregulator)) {
-				PK_DBG(
-					"[regulator]fail to regulator_disable, powertype: %d\n",
-					pin);
+				PK_PR_ERR("[regulator]fail to regulator_disable, powertype: %d\n", pin);
 				return IMGSENSOR_RETURN_ERROR;
 			}
 			atomic_dec(enable_cnt);
 		}
+
+		PK_INFO("[Regulator %s] sensor_idx = %d, pin = %d, voltage = %d\n",
+				pin_state != IMGSENSOR_HW_PIN_STATE_LEVEL_0 ? "on" : "off",
+				sensor_idx, pin, regulator_voltage[pin_state - IMGSENSOR_HW_PIN_STATE_LEVEL_0]);
 	} else {
 		PK_DBG("regulator == NULL %d %d %d\n",
 				reg_type_offset,

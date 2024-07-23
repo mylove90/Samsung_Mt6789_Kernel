@@ -145,32 +145,25 @@ static enum IMGSENSOR_RETURN mclk_set(
 		? pinst->drive_current[sensor_idx]
 		: MCLK_STATE_DISABLE;
 
+		if (state_index < 0)
+			return IMGSENSOR_RETURN_ERROR;
+
 		sensor_idx_uint = sensor_idx;
 		state_index_uint = state_index;
 
 		ppinctrl_state =
 			pinst->ppinctrl_state[sensor_idx_uint][state_index_uint];
-		/*
-		 * pr_debug(
-		 *	"%s : idx %d pin %d state %d driv_current %d\n",
-		 *	__func__,
-		 *	sensor_idx_uint,
-		 *	pin,
-		 *	pin_state,
-		 *	pinst->drive_current[sensor_idx_uint]);
-		 */
+
+		PK_INFO("[MCLK %s], sensor_idx =  %d, pin = %d, drive current = %d mA\n",
+				state_index ? "on" : "off", sensor_idx, pin, pinst->drive_current[sensor_idx] * 2);
 
 		mutex_lock(pinst->pmclk_mutex);
 
 		if (ppinctrl_state != NULL && !IS_ERR(ppinctrl_state))
 			pinctrl_select_state(pinst->ppinctrl, ppinctrl_state);
 		else
-			PK_DBG("%s : sensor_idx %d pinctrl, PinIdx %d, Val %d, drive current %d\n",
-				__func__,
-				sensor_idx_uint,
-				pin,
-				pin_state,
-				pinst->drive_current[sensor_idx_uint]);
+			PK_PR_ERR("%s : sensor_idx %d pinctrl, PinIdx %d, Val %d, drive current %d\n",
+				__func__, sensor_idx, pin, pin_state, pinst->drive_current[sensor_idx]);
 
 		mutex_unlock(pinst->pmclk_mutex);
 	}

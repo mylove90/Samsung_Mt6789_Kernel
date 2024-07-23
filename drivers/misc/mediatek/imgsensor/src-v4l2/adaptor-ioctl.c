@@ -1145,9 +1145,11 @@ static int g_seamless_switch_scenario(struct adaptor_ctx *ctx, void *arg)
 				target_scenario_ids[count]);
 		++count;
 	}
+
 	if (copy_to_user(target->target_scenario_ids,
 				 target_scenario_ids, sizeof(target_scenario_ids)))
 		return -EFAULT;
+
 
 	target->count = count;
 

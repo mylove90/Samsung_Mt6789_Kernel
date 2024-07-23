@@ -64,14 +64,9 @@
 static kal_uint16 _i2c_data[_I2C_BUF_SIZE];
 static unsigned int _size_to_write;
 
-static kal_uint8 otp_flag;
-
-static kal_uint32 previous_exp[3];
-static kal_uint16 previous_exp_cnt;
-
 static void commit_write_sensor(struct subdrv_ctx *ctx)
 {
-	if (_size_to_write && !ctx->fast_mode_on) {
+	if (_size_to_write) {
 		imx766_table_write_cmos_sensor_8(ctx, _i2c_data, _size_to_write);
 		memset(_i2c_data, 0x0, sizeof(_i2c_data));
 		_size_to_write = 0;
@@ -81,12 +76,17 @@ static void commit_write_sensor(struct subdrv_ctx *ctx)
 static void set_cmos_sensor_8(struct subdrv_ctx *ctx,
 			kal_uint16 reg, kal_uint16 val)
 {
-	if (_size_to_write + 2 >= _I2C_BUF_SIZE)
+	if (_size_to_write > _I2C_BUF_SIZE - 2)
 		commit_write_sensor(ctx);
 
 	_i2c_data[_size_to_write++] = reg;
 	_i2c_data[_size_to_write++] = val;
 }
+
+static kal_uint8 otp_flag;
+
+static kal_uint32 previous_exp[3];
+static kal_uint16 previous_exp_cnt;
 
 static struct imgsensor_info_struct imgsensor_info = {
 	.sensor_id = IMX766_SENSOR_ID,
@@ -784,7 +784,6 @@ static kal_uint32 get_exp_cnt_by_scenario(struct subdrv_ctx *ctx, kal_uint32 sce
 	kal_uint32 exp_cnt = 0, i = 0;
 	struct mtk_mbus_frame_desc frame_desc;
 
-	memset(&frame_desc, 0, sizeof(frame_desc));
 	get_frame_desc(ctx, scenario, &frame_desc);
 
 	for (i = 0; i < frame_desc.num_entries; ++i) {
@@ -1115,7 +1114,7 @@ static void set_multi_shutter_frame_length(struct subdrv_ctx *ctx,
 	kal_uint32 calc_fl = 0;
 	kal_uint32 calc_fl2 = 0;
 	kal_uint32 calc_fl3 = 0;
-	kal_uint16 le = 0, me = 0, se = 0;
+	kal_uint16 le, me, se;
 	kal_uint32 fineIntegTime = fine_integ_line_table[ctx->current_scenario_id];
 	kal_uint32 readoutLength = ctx->readout_length;
 	kal_uint32 readMargin = ctx->read_margin;
@@ -1382,13 +1381,6 @@ static kal_uint32 streaming_control(struct subdrv_ctx *ctx, kal_bool enable)
 		write_cmos_sensor_8(ctx, 0x0100, 0X01);
 	else {
 		write_cmos_sensor_8(ctx, 0x0100, 0x00);
-		if (ctx->fast_mode_on) {
-			ctx->fast_mode_on = KAL_FALSE;
-			ctx->ref_sof_cnt = 0;
-			DEBUG_LOG(ctx, "seamless_switch disabled.");
-			set_cmos_sensor_8(ctx, 0x3010, 0x00);
-			commit_write_sensor(ctx);
-		}
 		// write_cmos_sensor_8(ctx, 0x0808, 0x00);
 	}
 	return ERROR_NONE;
@@ -1695,22 +1687,18 @@ static void hdr_write_tri_shutter_w_gph(struct subdrv_ctx *ctx,
 	me = FINE_INTEG_CONVERT(me, fineIntegTime);
 	se = FINE_INTEG_CONVERT(se, fineIntegTime);
 
-	if (le)
-		exposure_cnt++;
-	if (me)
-		exposure_cnt++;
-	if (se)
-		exposure_cnt++;
-
 	if (le) {
+		exposure_cnt++;
 		le = (kal_uint16)max(imgsensor_info.min_shutter, (kal_uint32)le);
 		le = round_up((le) / exposure_cnt, 4) * exposure_cnt;
 	}
 	if (me) {
+		exposure_cnt++;
 		me = (kal_uint16)max(imgsensor_info.min_shutter, (kal_uint32)me);
 		me = round_up((me) / exposure_cnt, 4) * exposure_cnt;
 	}
 	if (se) {
+		exposure_cnt++;
 		se = (kal_uint16)max(imgsensor_info.min_shutter, (kal_uint32)se);
 		se = round_up((se) / exposure_cnt, 4) * exposure_cnt;
 	}
@@ -2035,8 +2023,7 @@ static kal_uint32 seamless_switch(struct subdrv_ctx *ctx,
 	}
 	}
 
-	ctx->fast_mode_on = KAL_TRUE;
-	ctx->ref_sof_cnt = ctx->sof_cnt;
+	set_cmos_sensor_8(ctx, 0x3010, 0x00);
 	LOG_DEBUG("%s success, scenario is switched to %d", __func__, scenario_id);
 	return 0;
 }
@@ -2157,9 +2144,6 @@ static int open(struct subdrv_ctx *ctx)
 	ctx->ihdr_mode = 0;
 	ctx->test_pattern = 0;
 	ctx->current_fps = imgsensor_info.pre.max_framerate;
-	ctx->sof_cnt = 0;
-	ctx->ref_sof_cnt = 0;
-	ctx->fast_mode_on = KAL_FALSE;
 
 	return ERROR_NONE;
 } /* open */
@@ -2539,8 +2523,7 @@ static int get_resolution(struct subdrv_ctx *ctx,
 	int i = 0;
 
 	for (i = SENSOR_SCENARIO_ID_MIN; i < SENSOR_SCENARIO_ID_MAX; i++) {
-		if (i < imgsensor_info.sensor_mode_num &&
-			i < ARRAY_SIZE(imgsensor_winsize_info)) {
+		if (i < imgsensor_info.sensor_mode_num) {
 			sensor_resolution->SensorWidth[i] = imgsensor_winsize_info[i].w2_tg_size;
 			sensor_resolution->SensorHeight[i] = imgsensor_winsize_info[i].h2_tg_size;
 		} else {
@@ -4928,28 +4911,6 @@ static int get_csi_param(struct subdrv_ctx *ctx,
 	return 0;
 }
 
-static int vsync_notify(struct subdrv_ctx *ctx,
-	unsigned int sof_cnt)
-{
-	DEBUG_LOG(ctx, "sof_cnt(%u) ctx->ref_sof_cnt(%u) ctx->fast_mode_on(%d)",
-		sof_cnt, ctx->ref_sof_cnt, ctx->fast_mode_on);
-	if (ctx->fast_mode_on && (sof_cnt > ctx->ref_sof_cnt)) {
-		ctx->fast_mode_on = KAL_FALSE;
-		ctx->ref_sof_cnt = 0;
-		DEBUG_LOG(ctx, "seamless_switch disabled.");
-		set_cmos_sensor_8(ctx, 0x3010, 0x00);
-		commit_write_sensor(ctx);
-	}
-	return 0;
-}
-
-static int update_sof_cnt(struct subdrv_ctx *ctx,
-	unsigned int sof_cnt)
-{
-	DEBUG_LOG(ctx, "update ctx->sof_cnt(%u)", sof_cnt);
-	ctx->sof_cnt = sof_cnt;
-	return 0;
-}
 
 static struct subdrv_ops ops = {
 	.get_id = get_imgsensor_id,
@@ -4965,8 +4926,6 @@ static struct subdrv_ops ops = {
 #endif
 	.get_temp = get_temp,
 	.get_csi_param = get_csi_param,
-	.vsync_notify = vsync_notify,
-	.update_sof_cnt = update_sof_cnt,
 };
 
 static struct subdrv_pw_seq_entry pw_seq[] = {

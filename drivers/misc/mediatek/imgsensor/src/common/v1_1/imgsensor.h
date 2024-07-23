@@ -72,5 +72,7 @@ imgsensor_sensor_control(
 		struct IMGSENSOR_SENSOR *psensor,
 		enum MSDK_SCENARIO_ID_ENUM ScenarioId);
 
+struct device *get_imgsensor_device(void);
+
 #endif
 

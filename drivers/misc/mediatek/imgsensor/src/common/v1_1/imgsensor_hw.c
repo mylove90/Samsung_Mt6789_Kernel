@@ -8,6 +8,7 @@
 
 #include "kd_camera_typedef.h"
 #include "kd_camera_feature.h"
+#include "kd_imgsensor.h"
 
 #include "imgsensor_sensor.h"
 #include "imgsensor_hw.h"
@@ -39,15 +40,16 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 	struct IMGSENSOR_HW_SENSOR_POWER      *psensor_pwr;
 	struct IMGSENSOR_HW_CFG               *pcust_pwr_cfg;
 	struct IMGSENSOR_HW_CUSTOM_POWER_INFO *ppwr_info;
-	unsigned int i, j, len;
+	unsigned int i, j;//, len;
 	char str_prop_name[LENGTH_FOR_SNPRINTF];
-	const char *pin_hw_id_name;
+	//const char *pin_hw_id_name;
 	struct device_node *of_node
 		= of_find_compatible_node(NULL, NULL, "mediatek,imgsensor");
-	int ret_snprintf = 0;
+	//int ret_snprintf = 0;
 
 	mutex_init(&phw->common.pinctrl_mutex);
 
+#if 0
 	/* update the imgsensor_custom_cfg by dts */
 	for (i = 0; i < IMGSENSOR_SENSOR_IDX_MAX_NUM; i++) {
 		PK_DBG("IMGSENSOR_SENSOR_IDX: %d\n", i);
@@ -102,7 +104,6 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 		default:
 			break;
 		}
-
 		/* pwr_info */
 		ppwr_info = pcust_pwr_cfg->pwr_info;
 		while (ppwr_info->pin != IMGSENSOR_HW_PIN_NONE) {
@@ -113,17 +114,13 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 					i,
 					imgsensor_hw_pin_names[ppwr_info->pin]);
 			if (ret_snprintf < 0)
-				PK_DBG("NOTICE: %s, snprintf err, %d\n",
-					__func__, ret_snprintf);
-			if (of_property_read_string(
-				of_node, str_prop_name,
-				&pin_hw_id_name) == 0) {
+				PK_INFO("NOTICE: %s, snprintf err, %d\n", __func__, ret_snprintf);
+
+			if (of_property_read_string(of_node, str_prop_name, &pin_hw_id_name) == 0) {
 				for (j = 0; j < IMGSENSOR_HW_ID_MAX_NUM; j++) {
 					len = strlen(imgsensor_hw_id_names[j]);
-					if (strncmp(pin_hw_id_name, imgsensor_hw_id_names[j], len)
-						== 0) {
-						PK_DBG("imgsensor_hw_cfg hw_pin:%s,name:%s,id:%d\n",
-							str_prop_name, pin_hw_id_name, j);
+					if (strncmp(pin_hw_id_name, imgsensor_hw_id_names[j], len) == 0) {
+						PK_INFO("imgsensor_hw_cfg hw_pin:%s,name:%s,id:%d\n", str_prop_name, pin_hw_id_name, j);
 						ppwr_info->id = j;
 						break;
 					}
@@ -137,7 +134,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 		}
 	}
 	/* update the imgsensor_custom_cfg by dts END */
-
+#endif
 	for (i = 0; i < IMGSENSOR_HW_ID_MAX_NUM; i++) {
 		if (hw_open[i] != NULL)
 			(hw_open[i]) (&phw->pdev[i]);
@@ -162,10 +159,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 		ppwr_info = pcust_pwr_cfg->pwr_info;
 		while (ppwr_info->pin != IMGSENSOR_HW_PIN_NONE) {
 			if (ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
-				for (j = 0;
-					j < IMGSENSOR_HW_ID_MAX_NUM &&
-					ppwr_info->id != phw->pdev[j]->id;
-					j++) {
+				for (j = 0; j < IMGSENSOR_HW_ID_MAX_NUM && ppwr_info->id != phw->pdev[j]->id; j++) {
 				}
 				psensor_pwr->id[ppwr_info->pin] = j;
 			}
@@ -183,7 +177,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 		if (of_property_read_string(
 			of_node, str_prop_name,
 			&phw->enable_sensor_by_index[i]) < 0) {
-			PK_DBG("Property cust-sensor not defined\n");
+			PK_INFO("Property cust-sensor not defined\n");
 			phw->enable_sensor_by_index[i] = NULL;
 		}
 	}
@@ -220,7 +214,7 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 
 #ifdef CONFIG_FPGA_EARLY_PORTING  /*for FPGA*/
 	if (1) {
-		PK_DBG("FPGA return true for power control\n");
+		PK_INFO("FPGA return true for power control\n");
 		return IMGSENSOR_RETURN_SUCCESS;
 	}
 #endif
@@ -252,12 +246,8 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 					pdev = phw->pdev[psensor_pwr->id[ppwr_info->pin]];
 
 					if (__ratelimit(&ratelimit))
-						PK_DBG(
-						"sensor_idx %d, ppwr_info->pin %d, ppwr_info->pin_state_on %d, delay %u",
-						sensor_idx,
-						ppwr_info->pin,
-						ppwr_info->pin_state_on,
-						ppwr_info->pin_on_delay);
+						PK_INFO("[Power on] sensor_idx = %d, pin = %d, pin_state_on = %d, delay after setting = %u ms",
+						sensor_idx, ppwr_info->pin, ppwr_info->pin_state_on, ppwr_info->pin_on_delay);
 
 					if (pdev->set != NULL)
 						pdev->set(
@@ -265,10 +255,11 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 							sensor_idx,
 							ppwr_info->pin,
 							ppwr_info->pin_state_on);
+
+					if (ppwr_info->pin_on_delay)
+						mDELAY(ppwr_info->pin_on_delay);
 				}
 			}
-
-			mdelay(ppwr_info->pin_on_delay);
 		}
 
 		ppwr_info++;
@@ -284,13 +275,12 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 				if (psensor_pwr->id[ppwr_info->pin] != IMGSENSOR_HW_ID_MAX_NUM) {
 					pdev = phw->pdev[psensor_pwr->id[ppwr_info->pin]];
 
+					if (ppwr_info->pin_on_delay)
+						mDELAY(ppwr_info->pin_on_delay);
+
 					if (__ratelimit(&ratelimit))
-						PK_DBG(
-						"sensor_idx %d, ppwr_info->pin %d, ppwr_info->pin_state_off %d, delay %u",
-						sensor_idx,
-						ppwr_info->pin,
-						ppwr_info->pin_state_off,
-						ppwr_info->pin_on_delay);
+						PK_INFO("[Power off] sensor_idx = %d, pin = %d, pin_state_off = %d, delay before setting = %u ms",
+							sensor_idx,	ppwr_info->pin,	ppwr_info->pin_state_off, ppwr_info->pin_on_delay);
 
 					if (pdev->set != NULL)
 						pdev->set(
@@ -300,8 +290,6 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 							ppwr_info->pin_state_off);
 				}
 			}
-
-			mdelay(ppwr_info->pin_on_delay);
 		}
 	}
 
@@ -318,9 +306,9 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	char *curr_sensor_name = psensor->inst.psensor_list->name;
 	char str_index[LENGTH_FOR_SNPRINTF];
 
-	PK_DBG("sensor_idx %d, power %d curr_sensor_name %s, enable list %s\n",
+	PK_INFO("[Power %s] sensor_idx = %d, curr_sensor_name = %s, enable list = %s",
+		pwr_status ? "on" : "off",
 		sensor_idx,
-		pwr_status,
 		curr_sensor_name,
 		phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL
 		? "NULL"
@@ -332,31 +320,15 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 
 	ret = snprintf(str_index, sizeof(str_index), "%d", sensor_idx);
 	if (ret < 0) {
-		PK_DBG("Error! snprintf allocate 0");
+		PK_PR_ERR("Error! snprintf allocate 0");
 		ret = IMGSENSOR_RETURN_ERROR;
 		return ret;
 	}
-	if (IS_MT6873(phw->g_platform_id) || IS_MT6853(phw->g_platform_id))
-		imgsensor_hw_power_sequence(
-				phw,
-				sensor_idx,
-				pwr_status,
-				platform_power_sequence_for_mipi_switch,
-				str_index);
-	else if (IS_MT6833(phw->g_platform_id))
-		imgsensor_hw_power_sequence(
-				phw,
-				sensor_idx,
-				pwr_status,
-				platform_power_sequence_for_mt6833,
-				str_index);
-	else
-		imgsensor_hw_power_sequence(
-				phw,
-				sensor_idx,
-				pwr_status,
-				platform_power_sequence,
-				str_index);
+
+	imgsensor_hw_power_sequence(
+			phw,
+			sensor_idx,
+			pwr_status, platform_power_sequence, str_index);
 
 	imgsensor_hw_power_sequence(
 			phw,
