@@ -453,6 +453,12 @@ READ_START:
 	}
 	ts_1 = local_clock();
 
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+	if (port->rx_ch == CCCI_RIL_IPC0_RX || port->rx_ch == CCCI_RIL_IPC1_RX) {
+		print_hex_dump(KERN_INFO, "3. mif: RX: ",
+				DUMP_PREFIX_NONE, 32, 1, skb->data, 32, 0);
+	}
+#endif
 	skb_pull(skb, read_len);
 	/* 4. free request */
 	if (full_req_done)
@@ -468,6 +474,12 @@ READ_START:
 
 
  exit:
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+	if (ret < 0 && (port->rx_ch == CCCI_RIL_IPC0_RX || port->rx_ch == CCCI_RIL_IPC1_RX))
+		CCCI_ERROR_LOG(port->md_id, CHAR,
+				"RILD failed to read ipc packet, ret = %d, rx_ch = %d\n",
+				ret, port->rx_ch);
+#endif
 	return ret ? ret : read_len;
 }
 
@@ -1009,6 +1021,13 @@ int port_recv_skb(struct port_t *port, struct sk_buff *skb)
 			}
 		}
 
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		if (ccci_h->channel == CCCI_RIL_IPC0_RX
+			|| ccci_h->channel == CCCI_RIL_IPC1_RX) {
+			print_hex_dump(KERN_INFO, "2. mif: RX: ",
+				DUMP_PREFIX_NONE, 32, 1, skb->data, 32, 0);
+		}
+#endif
 		atomic_inc(&port->rx_pkg_cnt);
 		spin_unlock_irqrestore(&port->rx_skb_list.lock, flags);
 		__pm_wakeup_event(port->rx_wakelock, jiffies_to_msecs(HZ/2));
@@ -1025,9 +1044,15 @@ int port_recv_skb(struct port_t *port, struct sk_buff *skb)
 			"port %s Rx full, drop packet\n",
 			port->name);
 		goto drop;
-	} else
+	} else {
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+		__pm_wakeup_event(port->rx_wakelock, jiffies_to_msecs(HZ/2));
+		spin_lock_irqsave(&port->rx_wq.lock, flags);
+		wake_up_all_locked(&port->rx_wq);
+		spin_unlock_irqrestore(&port->rx_wq.lock, flags);
+#endif
 		return -CCCI_ERR_PORT_RX_FULL;
-
+	}
  drop:
 	/* only return drop and caller do drop */
 	CCCI_NORMAL_LOG(port->md_id, TAG,
@@ -1124,8 +1149,10 @@ int port_user_register(struct port_t *port)
 	proxy_p = GET_PORT_PROXY(md_id);
 	if (rx_ch == CCCI_FS_RX)
 		proxy_set_critical_user(proxy_p, CRIT_USR_FS, 1);
+#ifndef CONFIG_MTK_SRIL_SUPPORT
 	if (rx_ch == CCCI_UART2_RX)
 		proxy_set_critical_user(proxy_p, CRIT_USR_MUXD, 1);
+#endif
 	if (rx_ch == CCCI_MD_LOG_RX || (rx_ch == CCCI_SMEM_CH &&
 		strcmp(port->name, "ccci_ccb_dhl") == 0))
 		proxy_set_critical_user(proxy_p, CRIT_USR_MDLOG, 1);
@@ -1133,6 +1160,9 @@ int port_user_register(struct port_t *port)
 		proxy_set_critical_user(proxy_p, CRIT_USR_META, 1);
 	return 0;
 }
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+EXPORT_SYMBOL(port_user_register);
+#endif
 
 int port_user_unregister(struct port_t *port)
 {
@@ -1770,6 +1800,10 @@ struct port_t *port_get_by_minor(int md_id, int minor)
 	return proxy_get_port(GET_PORT_PROXY(md_id), minor,
 			CCCI_INVALID_CH_ID);
 }
+#ifdef CONFIG_MTK_SRIL_SUPPORT
+EXPORT_SYMBOL(port_get_by_minor);
+#endif
+
 struct port_t *port_get_by_channel(int md_id, enum CCCI_CH ch)
 {
 	if (md_id < 0 || md_id >= MAX_MD_NUM) {

@@ -16,6 +16,7 @@
 #include "ccci_common_config.h"
 #include "ccci_fsm_internal.h"
 #include "md_sys1_platform.h"
+#include "modem_secure_base.h"
 
 #ifdef FEATURE_SCP_CCCI_SUPPORT
 #include "scp_ipi.h"
@@ -153,17 +154,32 @@ static int scp_set_clk_cg(unsigned int on)
 	return 0;
 }
 
+static void ccci_notify_atf_set_scpmem(void)
+{
+	struct arm_smccc_res res = {0};
+
+	arm_smccc_smc(MTK_SIP_KERNEL_CCCI_CONTROL, SCP_CLK_SET_DONE,
+		0, 0, 0, 0, 0, 0, &res);
+	CCCI_NORMAL_LOG(MD_SYS1, FSM, "%s [done]\n", __func__);
+}
+
+
 static void ccci_scp_md_state_sync_work(struct work_struct *work)
 {
 	struct ccci_fsm_scp *scp_ctl = container_of(work,
 		struct ccci_fsm_scp, scp_md_state_sync_work);
-	int ret;
-	enum MD_STATE_FOR_USER state =
-		ccci_fsm_get_md_state_for_user(scp_ctl->md_id);
+	struct ccci_fsm_ctl *ctl = fsm_get_entity_by_md_id(scp_ctl->md_id);
+	enum MD_STATE_FOR_USER state;
+	int ret = 0;
 	int count = 0;
 
-	switch (state) {
-	case MD_STATE_READY:
+	if (!ctl) {
+		CCCI_ERROR_LOG(-1, FSM, "%s ctl is NULL !\n", __func__);
+		return;
+	}
+
+	switch (ctl->md_state) {
+	case READY:
 		if (scp_ctl->md_id == MD_SYS1) {
 			while (count < SCP_BOOT_TIMEOUT/EVENT_POLL_INTEVAL) {
 				if (atomic_read(&scp_state) ==
@@ -186,7 +202,7 @@ static void ccci_scp_md_state_sync_work(struct work_struct *work)
 						"fail to set scp clk, ret = %d\n", ret);
 					break;
 				}
-
+				ccci_notify_atf_set_scpmem();
 				ret = ccci_port_send_msg_to_md(scp_ctl->md_id,
 					CCCI_SYSTEM_TX, CCISM_SHM_INIT, 0, 1);
 				if (ret < 0)
@@ -197,8 +213,14 @@ static void ccci_scp_md_state_sync_work(struct work_struct *work)
 		} else
 			break;
 		break;
-	case MD_STATE_EXCEPTION:
-	case MD_STATE_INVALID:
+	case INVALID:
+	case GATED:
+		state = MD_STATE_INVALID;
+		ccci_scp_ipi_send(scp_ctl->md_id,
+			CCCI_OP_MD_STATE, &state);
+		break;
+	case EXCEPTION:
+		state = MD_STATE_EXCEPTION;
 		ccci_scp_ipi_send(scp_ctl->md_id,
 			CCCI_OP_MD_STATE, &state);
 		break;
