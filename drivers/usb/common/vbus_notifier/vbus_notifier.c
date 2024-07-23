@@ -2,9 +2,7 @@
 #include <linux/module.h>
 
 #include <linux/notifier.h>
-#if IS_ENABLED(CONFIG_DRV_SAMSUNG)
 #include <linux/sec_class.h>
-#endif
 #include <linux/vbus_notifier.h>
 
 #define SET_VBUS_NOTIFIER_BLOCK(nb, fn, dev) do {	\

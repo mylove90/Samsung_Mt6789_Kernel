@@ -663,11 +663,6 @@ static void mml_core_dvfs_begin(struct mml_task *task, u32 pipe)
 	u32 max_pixel = task->config->cache[pipe].max_pixel;
 	u64 duration = 0;
 
-	if (unlikely(!path_clt)) {
-		mml_err("%s core_get_path_clt return null", __func__);
-		return;
-	}
-
 	mml_trace_ex_begin("%s", __func__);
 	mutex_lock(&path_clt->clt_mutex);
 
@@ -766,11 +761,6 @@ static void mml_core_dvfs_end(struct mml_task *task, u32 pipe)
 	u32 throughput = 0, tput_up, max_pixel = 0, bandwidth = 0;
 	bool racing_mode = true;
 	bool overdue = false;
-
-	if (unlikely(!path_clt)) {
-		mml_err("%s core_get_path_clt return null", __func__);
-		return;
-	}
 
 	mml_trace_ex_begin("%s", __func__);
 	mutex_lock(&path_clt->clt_mutex);
@@ -1777,6 +1767,7 @@ void mml_update_array(struct mml_task_reuse *reuse,
 	*va = (*va & GENMASK(63, 32)) | value;
 }
 
+#if IS_ENABLED(CONFIG_MTK_MML_DEBUG)
 noinline int tracing_mark_write(char *fmt, ...)
 {
 #ifdef CONFIG_TRACING
@@ -1797,3 +1788,4 @@ noinline int tracing_mark_write(char *fmt, ...)
 #endif
 	return 0;
 }
+#endif
