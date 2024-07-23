@@ -2169,10 +2169,14 @@ static void mtk_aal_stop(struct mtk_ddp_comp *comp, struct cmdq_pkt *handle)
 static void mtk_aal_bypass(struct mtk_ddp_comp *comp, int bypass,
 	struct cmdq_pkt *handle)
 {
-	AALFLOW_LOG("\n");
+	AALFLOW_LOG("bypass: %d\n", bypass);
 	cmdq_pkt_write(handle, comp->cmdq_base, comp->regs_pa + DISP_AAL_CFG,
 		bypass, 0x1);
 	atomic_set(&g_aal_force_relay, bypass);
+
+	if (bypass == 0) // Enable AAL Histogram
+		cmdq_pkt_write(handle, comp->cmdq_base,
+			comp->regs_pa + DISP_AAL_CFG, 0x3 << 1, (0x3 << 1));
 }
 
 static int mtk_aal_user_cmd(struct mtk_ddp_comp *comp, struct cmdq_pkt *handle,
@@ -2418,6 +2422,7 @@ static void ddp_aal_restore(struct mtk_ddp_comp *comp)
 static bool debug_skip_first_br;
 static void mtk_aal_prepare(struct mtk_ddp_comp *comp)
 {
+	int ret = 0;
 	struct mtk_disp_aal *aal_data = comp_to_aal(comp);
 	bool first_restore = (atomic_read(&aal_data->is_clock_on) == 0);
 
@@ -2438,8 +2443,11 @@ static void mtk_aal_prepare(struct mtk_ddp_comp *comp)
 			atomic_read(&g_aal_data->is_clock_on));
 
 	if (g_aal_fo->mtk_dre30_support) {
-		if (aal_data->dre3_hw.clk)
-			clk_prepare(aal_data->dre3_hw.clk);
+		if (aal_data->dre3_hw.clk) {
+			ret = clk_prepare(aal_data->dre3_hw.clk);
+			if (ret < 0)
+				DDPPR_ERR("failed to prepare dre3_hw.clk\n");
+		}
 	}
 	if (!first_restore && !debug_skip_first_br)
 		return;

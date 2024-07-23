@@ -3,6 +3,7 @@
  * Copyright (c) 2021 MediaTek Inc.
  */
 
+#include <linux/syscalls.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_probe_helper.h>
@@ -350,6 +351,7 @@ static void mtk_atomic_rsz_calc_dual_params(
 	else if (left >= width / 2)
 		tile_idx = 1;
 
+
 	DDPINFO("%s :loss:%d,idx:%d,width:%d,src_w:%d,dst_w:%d,src_x:%d\n", __func__,
 	       tile_loss, tile_idx, width, src_roi->width, dst_roi->width, src_roi->x);
 	step = (UNIT * (src_roi->width - 1) + (dst_roi->width - 2)) /
@@ -372,7 +374,7 @@ static void mtk_atomic_rsz_calc_dual_params(
 	/*left side*/
 	/*right bound - left bound + tile loss*/
 	tile_in_len[0] = (((width / 2) * src_roi->width * 10) /
-			dst_roi->width + 5) / 10 - src_roi->x + tile_loss;
+		dst_roi->width + 5) / 10 - src_roi->x + tile_loss;
 	tile_out_len[0] = width / 2 - dst_roi->x;
 	out_x[0] = dst_roi->x;
 
@@ -421,7 +423,7 @@ static void mtk_atomic_rsz_calc_dual_params(
 	param[1].in_len = tile_in_len[1];
 	param[1].out_len = tile_out_len[1];
 
-	DDPINFO("%s,%d:step:%u,offset:%u.%u,len:%u->%u,out_x:%u\n", __func__, __LINE__,
+	DDPINFO("%s,%d :step:%u,offset:%u.%u,len:%u->%u,out_x:%u\n", __func__, __LINE__,
 	       param[1].step,
 	       param[1].int_offset,
 	       param[1].sub_offset,
@@ -443,7 +445,7 @@ static void mtk_atomic_disp_rsz_roi(struct drm_device *dev,
 	struct mtk_rect src_layer_roi = {0};
 	struct mtk_rect src_total_roi[MAX_CRTC] = {0};
 	bool rsz_enable[MAX_CRTC] = {false};
-	struct mtk_plane_comp_state comp_state[MAX_CRTC][OVL_LAYER_NR] = {0};
+	struct mtk_plane_comp_state comp_state[MAX_CRTC][OVL_LAYER_NR];
 
 	for_each_old_crtc_in_state(old_state, crtc, old_crtc_state, i) {
 		struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
@@ -1071,33 +1073,11 @@ static struct mml_submit *mtk_alloc_mml_submit(void)
 	unsigned int i = 0;
 
 	temp = kzalloc(sizeof(struct mml_submit), GFP_KERNEL);
-	if (!temp) {
-		DDPPR_ERR("%s %d alloc fail\n", __func__, __LINE__);
-		return NULL;
-	}
 	temp->job = kzalloc(sizeof(struct mml_job), GFP_KERNEL);
-	if (!temp->job) {
-		DDPPR_ERR("%s %d alloc fail\n", __func__, __LINE__);
-		goto err0;
-	}
-	for (i = 0; i < MML_MAX_OUTPUTS; ++i) {
+	for (i = 0; i < MML_MAX_OUTPUTS; ++i)
 		temp->pq_param[i] =	kzalloc(sizeof(struct mml_pq_param), GFP_KERNEL);
-		if (!temp->pq_param[i]) {
-			DDPPR_ERR("%s %d alloc fail\n", __func__, __LINE__);
-			goto err1;
-		}
-	}
 
 	return temp;
-
-err1:
-	for (i = 0; i < MML_MAX_OUTPUTS; ++i)
-		kfree(temp->pq_param[i]);
-	kfree(temp->job);
-err0:
-	kfree(temp);
-
-	return NULL;
 }
 
 void mtk_free_mml_submit(struct mml_submit *temp)
@@ -1219,111 +1199,111 @@ static void _mtk_atomic_mml_plane(struct drm_device *dev,
 		(mtk_plane_state->prop_val[PLANE_PROP_MML_SUBMIT]);
 
 	submit_kernel = mtk_alloc_mml_submit();
-	if (!submit_kernel)
+	if (!submit_kernel) {
+		DDPPR_ERR("%s, null submit_kernel!", __func__);
 		return;
+	}
 	ret = copy_mml_submit_from_user(submit_user, submit_kernel);
 	if (ret < 0)
 		goto err_handle_mtk_atomic_mml_plane_free_mml_submit;
 
-	if (submit_kernel != NULL) {
-		submit_kernel->update = false;
-		submit_kernel->info.mode = MML_MODE_RACING;
+	submit_kernel->update = false;
+	submit_kernel->info.mode = MML_MODE_RACING;
 
-		mml_ctx = mtk_drm_get_mml_drm_ctx(dev, &(mtk_crtc->base));
-		submit_pq = mtk_alloc_mml_submit();
+	mml_ctx = mtk_drm_get_mml_drm_ctx(dev, &(mtk_crtc->base));
+	submit_pq = mtk_alloc_mml_submit();
 
-		if (!(mtk_crtc->is_force_mml_scen)) {
-			bool is_rotate =
-				(submit_kernel->info.dest[0].rotate & MML_ROT_90) == MML_ROT_90;
-			uint32_t min_w = min(submit_kernel->info.src.width,
-				(is_rotate) ? submit_kernel->info.dest[0].data.height :
-					submit_kernel->info.dest[0].data.width);
-			uint32_t min_h = min(submit_kernel->info.src.height,
-				(is_rotate) ? submit_kernel->info.dest[0].data.width :
-					submit_kernel->info.dest[0].data.height);
+	if (!(mtk_crtc->is_force_mml_scen)) {
+		bool is_rotate =
+			(submit_kernel->info.dest[0].rotate & MML_ROT_90) == MML_ROT_90;
+		uint32_t min_w = min(submit_kernel->info.src.width,
+			(is_rotate) ? submit_kernel->info.dest[0].data.height :
+				submit_kernel->info.dest[0].data.width);
+		uint32_t min_h = min(submit_kernel->info.src.height,
+			(is_rotate) ? submit_kernel->info.dest[0].data.width :
+				submit_kernel->info.dest[0].data.height);
 
-			submit_kernel->info.dest[0].crop.r.width =
-				(is_rotate) ? (min_w / 64) * 64 : min_w;
-			submit_kernel->info.dest[0].crop.r.height =
-				(is_rotate) ? min_h : (min_h / 64) * 64;
-			submit_kernel->info.dest[0].crop.r.left = 0;
-			submit_kernel->info.dest[0].crop.r.top = 0;
-			submit_kernel->info.dest[0].crop.h_sub_px = 0;
-			submit_kernel->info.dest[0].crop.w_sub_px = 0;
-			submit_kernel->info.dest[0].crop.x_sub_px = 0;
-			submit_kernel->info.dest[0].crop.y_sub_px = 0;
+		submit_kernel->info.dest[0].crop.r.width =
+			(is_rotate) ? (min_w / 64) * 64 : min_w;
+		submit_kernel->info.dest[0].crop.r.height =
+			(is_rotate) ? min_h : (min_h / 64) * 64;
+		submit_kernel->info.dest[0].crop.r.left = 0;
+		submit_kernel->info.dest[0].crop.r.top = 0;
+		submit_kernel->info.dest[0].crop.h_sub_px = 0;
+		submit_kernel->info.dest[0].crop.w_sub_px = 0;
+		submit_kernel->info.dest[0].crop.x_sub_px = 0;
+		submit_kernel->info.dest[0].crop.y_sub_px = 0;
 
-			submit_kernel->info.dest[0].compose.width =
-				submit_kernel->info.dest[0].crop.r.width;
-			submit_kernel->info.dest[0].compose.height =
-				submit_kernel->info.dest[0].crop.r.height;
-			submit_kernel->info.dest[0].compose.left =
-				submit_kernel->info.dest[0].crop.r.left;
-			submit_kernel->info.dest[0].compose.top =
-				submit_kernel->info.dest[0].crop.r.top;
-		}
+		submit_kernel->info.dest[0].compose.width =
+			submit_kernel->info.dest[0].crop.r.width;
+		submit_kernel->info.dest[0].compose.height =
+			submit_kernel->info.dest[0].crop.r.height;
+		submit_kernel->info.dest[0].compose.left =
+			submit_kernel->info.dest[0].crop.r.left;
+		submit_kernel->info.dest[0].compose.top =
+			submit_kernel->info.dest[0].crop.r.top;
+	}
 
-		{
-			for (i = 0; i < MML_MAX_OUTPUTS; ++i) {
-				for (j = 0; j < MML_MAX_PLANES; ++j) {
-					submit_kernel->buffer.dest[i].fd[j] = -1;
-					submit_kernel->buffer.dest[i].size[j] = 0;
-				}
+	{
+		for (i = 0; i < MML_MAX_OUTPUTS; ++i) {
+			for (j = 0; j < MML_MAX_PLANES; ++j) {
+				submit_kernel->buffer.dest[i].fd[j] = -1;
+				submit_kernel->buffer.dest[i].size[j] = 0;
 			}
 		}
+	}
 
-		for (i = 0; i < MML_MAX_PLANES && i < submit_kernel->buffer.src.cnt; ++i) {
-			int32_t fd = submit_kernel->buffer.src.fd[i];
+	for (i = 0; i < MML_MAX_PLANES && i < submit_kernel->buffer.src.cnt; ++i) {
+		int32_t fd = submit_kernel->buffer.src.fd[i];
 
-			submit_kernel->buffer.src.use_dma = true;
-			submit_kernel->buffer.src.dmabuf[i] = fd_to_dma_buf(fd);
-			DDPINFO("%s:%d dmabuf:0x%p\n", __func__, __LINE__,
-				submit_kernel->buffer.src.dmabuf[i]);
-		}
+		submit_kernel->buffer.src.use_dma = true;
+		submit_kernel->buffer.src.dmabuf[i] = fd_to_dma_buf(fd);
+		DDPINFO("%s:%d dmabuf:0x%p\n", __func__, __LINE__,
+			submit_kernel->buffer.src.dmabuf[i]);
+	}
 
-		mml_drm_split_info(submit_kernel, submit_pq);
+	mml_drm_split_info(submit_kernel, submit_pq);
 
-		// calculate line time, unit:ns
-		if (!mtk_crtc_is_frame_trigger_mode(mtk_plane_state->crtc)) {
-			// vdo mode
-			line_time = (1000000000 / fps) / vtotal;
-		} else {
-			// cmd mode
-			comp = mtk_ddp_comp_request_output(mtk_crtc);
-			if (comp)
-				mtk_ddp_comp_io_cmd(comp, NULL,
-							DSI_GET_CMD_MODE_LINE_TIME, &line_time);
-		}
-		// calculate act time
-		submit_kernel->info.act_time = line_time * submit_pq->info.dest[0].data.height;
-		DDPINFO("%s fps=%d vtotal=%d line_time=%d dest_height=%d act_time=%d\n", __func__,
-				fps, vtotal, line_time, submit_pq->info.dest[0].data.height,
-				submit_kernel->info.act_time);
+	// calculate line time, unit:ns
+	if (!mtk_crtc_is_frame_trigger_mode(mtk_plane_state->crtc)) {
+		// vdo mode
+		line_time = (1000000000 / fps) / vtotal;
+	} else {
+		// cmd mode
+		comp = mtk_ddp_comp_request_output(mtk_crtc);
+		if (comp)
+			mtk_ddp_comp_io_cmd(comp, NULL,
+						DSI_GET_CMD_MODE_LINE_TIME, &line_time);
+	}
+	// calculate act time
+	submit_kernel->info.act_time = line_time * submit_pq->info.dest[0].data.height;
+	DDPINFO("%s fps=%d vtotal=%d line_time=%d dest_height=%d act_time=%d\n", __func__,
+			fps, vtotal, line_time, submit_pq->info.dest[0].data.height,
+			submit_kernel->info.act_time);
 
-		DDPINFO("%s mml act_time=%d\n", __func__, submit_kernel->info.act_time);
+	DDPINFO("%s mml act_time=%d\n", __func__, submit_kernel->info.act_time);
 
-		if (mml_ctx != NULL) {
-			ret = mml_drm_submit(mml_ctx, submit_kernel, &(mtk_crtc->mml_cb));
+	if (mml_ctx != NULL) {
+		ret = mml_drm_submit(mml_ctx, submit_kernel, &(mtk_crtc->mml_cb));
 
-			mtk_crtc->is_mml = true;
-			mtk_plane_state->mml_mode = MML_MODE_RACING;
+		mtk_crtc->is_mml = true;
+		mtk_plane_state->mml_mode = MML_MODE_RACING;
 
-			// release previous mml_cfg
-			if (mtk_plane_state->mml_cfg)
-				mtk_free_mml_submit(mtk_plane_state->mml_cfg);
-			mtk_plane_state->mml_cfg = submit_pq;
+		// release previous mml_cfg
+		if (mtk_plane_state->mml_cfg)
+			mtk_free_mml_submit(mtk_plane_state->mml_cfg);
+		mtk_plane_state->mml_cfg = submit_pq;
 
-			// release previous mml_cfg
-			if (mtk_crtc->mml_cfg)
-				mtk_free_mml_submit(mtk_crtc->mml_cfg);
-			mtk_crtc->mml_cfg = submit_kernel;
-			mtk_crtc->mml_cfg_pq = submit_pq;
+		// release previous mml_cfg
+		if (mtk_crtc->mml_cfg)
+			mtk_free_mml_submit(mtk_crtc->mml_cfg);
+		mtk_crtc->mml_cfg = submit_kernel;
+		mtk_crtc->mml_cfg_pq = submit_pq;
 
-			crtc_state->mml_dst_roi.x = mtk_plane_state->base.dst.x1;
-			crtc_state->mml_dst_roi.y = mtk_plane_state->base.dst.y1;
-			crtc_state->mml_dst_roi.width = submit_pq->info.dest[0].compose.width;
-			crtc_state->mml_dst_roi.height = submit_pq->info.dest[0].compose.height;
-		}
+		crtc_state->mml_dst_roi.x = mtk_plane_state->base.dst.x1;
+		crtc_state->mml_dst_roi.y = mtk_plane_state->base.dst.y1;
+		crtc_state->mml_dst_roi.width = submit_pq->info.dest[0].compose.width;
+		crtc_state->mml_dst_roi.height = submit_pq->info.dest[0].compose.height;
 	}
 
 	return;
@@ -1403,6 +1383,9 @@ static void mtk_atomic_complete(struct mtk_drm_private *private,
 				struct drm_atomic_state *state)
 {
 	struct drm_device *drm = private->drm;
+	struct drm_crtc *crtc = private->crtc[0];
+	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
+	bool skip_frame = mtk_crtc->skip_frame;
 
 	if (mtk_atomic_skip_config(state)) {
 		drm_atomic_helper_commit_planes(drm, state,
@@ -1446,10 +1429,15 @@ static void mtk_atomic_complete(struct mtk_drm_private *private,
 
 	mtk_atomic_mml(drm, state);
 
-	if (!mtk_atomic_skip_plane_update(private, state)) {
+	if (!mtk_atomic_skip_plane_update(private, state) && !skip_frame) {
 		drm_atomic_helper_commit_planes(drm, state,
 						DRM_PLANE_COMMIT_ACTIVE_ONLY);
 		drm_atomic_esd_chk_first_enable(drm, state);
+	} else if (skip_frame) {
+		pr_info("[%s] skip frame update\n", __func__);
+#ifdef MTK_DRM_FENCE_SUPPORT
+		release_fence_frame_skip(crtc);
+#endif
 	}
 
 	mtk_atomic_doze_finish(drm, state);
@@ -1477,6 +1465,7 @@ static int mtk_atomic_check(struct drm_device *dev,
 	struct drm_crtc_state *crtc_state;
 	struct mtk_crtc_state *old_state, *new_state;
 	int i, ret = 0;
+	int power_mode = DISP_NONE;
 
 	ret = drm_atomic_helper_check(dev, state);
 	if (ret)
@@ -1488,6 +1477,29 @@ static int mtk_atomic_check(struct drm_device *dev,
 
 		if (drm_crtc_index(crtc) == 0)
 			mtk_drm_crtc_mode_check(crtc, crtc->state, crtc_state);
+
+		if (crtc_state->active == 0 &&
+				crtc->state->active == 1) {
+			if (old_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
+				power_mode = DISP_DOZE_SUSPEND;
+			else
+				power_mode = DISP_OFF;
+		} else if (crtc_state->active == 1 &&
+				crtc->state->active == 0) {
+			if (old_state->prop_val[CRTC_PROP_DOZE_ACTIVE] &&
+					!new_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
+				power_mode = DISP_ON;
+			else if (old_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
+				power_mode = DISP_DOZE;
+			else
+				power_mode = DISP_ON;
+		} else if (!old_state->prop_val[CRTC_PROP_DOZE_ACTIVE] &&
+				new_state->prop_val[CRTC_PROP_DOZE_ACTIVE]) {
+			power_mode = DISP_DOZE;
+		}
+
+		if (power_mode != DISP_NONE)
+			mtk_notifier_call_chain(MTK_POWER_MODE_CHANGE, (void *)&power_mode);
 
 		if (old_state->prop_val[CRTC_PROP_DOZE_ACTIVE] ==
 		    new_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
@@ -1506,20 +1518,111 @@ static int mtk_atomic_check(struct drm_device *dev,
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
+static bool  mtk_mcd_panel_lock(struct drm_atomic_state *state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
+	int i;
+	struct mtk_crtc_state *old_state, *new_state;
+	struct mtk_panel_funcs *panel_funcs = NULL;
+	struct mtk_panel_params *panel_params = NULL;
+	bool need_lock = false;
+
+	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
+		if (drm_crtc_index(crtc))
+			continue;
+
+		panel_funcs = mtk_drm_get_lcm_ext_funcs(crtc);
+		BUG_ON(!panel_funcs);
+
+		panel_params = mtk_drm_get_lcm_ext_params(crtc);
+		BUG_ON(!panel_params);
+
+		old_state = to_mtk_crtc_state(old_crtc_state);
+		new_state = to_mtk_crtc_state(new_crtc_state);
+		BUG_ON(!old_state || !new_state);
+
+		/* check commit thread trigger cmd tx or not... */
+
+		/* 1: needs_modeset */
+		if (drm_atomic_crtc_needs_modeset(new_crtc_state)) {
+			need_lock = true;
+
+		/* 2: MTK disp mode */
+		} else if (old_state->prop_val[CRTC_PROP_DISP_MODE_IDX]  != new_state->prop_val[CRTC_PROP_DISP_MODE_IDX]) {
+			need_lock = true;
+
+		/* 3: doze */
+		} else if (old_state->prop_val[CRTC_PROP_DOZE_ACTIVE]  != new_state->prop_val[CRTC_PROP_DOZE_ACTIVE]) {
+			need_lock = true;
+		}
+
+		/* Todo: optical finger HBM... */
+
+		if (need_lock) {
+			pr_info("%s: [CRTC:%d:%s:%d] active(%d->%d) changed(%d %d %d)->(%d %d %d) disp_mode(%d->%d) doze(%d->%d)\n",
+				__func__, crtc->base.id, crtc->name, drm_crtc_index(crtc), old_crtc_state->active, new_crtc_state->active,
+				old_crtc_state->mode_changed, old_crtc_state->active_changed, old_crtc_state->connectors_changed,
+				new_crtc_state->mode_changed, new_crtc_state->active_changed, new_crtc_state->connectors_changed,
+				old_state->prop_val[CRTC_PROP_DISP_MODE_IDX], new_state->prop_val[CRTC_PROP_DISP_MODE_IDX],
+				old_state->prop_val[CRTC_PROP_DOZE_ACTIVE], new_state->prop_val[CRTC_PROP_DOZE_ACTIVE]);
+		}
+	}
+
+	if (need_lock && panel_funcs && panel_funcs->set_panel_lock && panel_params) {
+		panel_funcs->set_panel_lock(panel_params->drm_panel, true);
+		return true;
+	}
+
+	return false;
+}
+
+static void  mtk_mcd_panel_unlock(struct drm_atomic_state *state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
+	int i;
+	struct mtk_panel_funcs *panel_funcs = NULL;
+	struct mtk_panel_params *panel_params = NULL;
+
+	for_each_oldnew_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state, i) {
+		if (drm_crtc_index(crtc))
+			continue;
+
+		panel_funcs = mtk_drm_get_lcm_ext_funcs(crtc);
+		BUG_ON(!panel_funcs);
+
+		panel_params = mtk_drm_get_lcm_ext_params(crtc);
+		BUG_ON(!panel_params);
+	}
+
+	if (panel_funcs && panel_funcs->set_panel_lock && panel_params)
+		panel_funcs->set_panel_lock(panel_params->drm_panel, false);
+}
+#endif
+
 static int mtk_atomic_commit(struct drm_device *drm,
 			     struct drm_atomic_state *state, bool async)
 {
 	struct mtk_drm_private *private = drm->dev_private;
 	uint32_t crtc_mask;
 	struct drm_crtc *crtc;
-	struct mtk_drm_crtc *mtk_crtc;
+	struct mtk_drm_crtc *mtk_crtc = NULL;
 	int ret, i = 0;
 	int index;
+#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
+	bool need_mcd_lock = false;
+#endif
 
 	DDP_PROFILE("[PROFILE] %s+\n", __func__);
 	ret = drm_atomic_helper_prepare_planes(drm, state);
 	if (ret)
 		return ret;
+
+#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
+	need_mcd_lock = mtk_mcd_panel_lock(state);
+#endif
 
 	mutex_lock(&private->commit.lock);
 	flush_work(&private->commit.work);
@@ -1548,6 +1651,13 @@ static int mtk_atomic_commit(struct drm_device *drm,
 		CRTC_MMP_EVENT_START(index, atomic_commit, 0, 0);
 	}
 	mutex_nested_time_start = sched_clock();
+
+	if (mtk_crtc)
+#ifndef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+		mtk_crtc->need_lock_tid = sys_gettid();
+#else
+		mtk_crtc->need_lock_tid = current->pid;
+#endif
 
 	ret = drm_atomic_helper_swap_state(state, 0);
 	if (ret) {
@@ -1589,8 +1699,16 @@ err_mutex_unlock:
 	}
 	DRM_MMP_EVENT_END(mutex_lock, 0, 0);
 
+	if (mtk_crtc)
+		mtk_crtc->need_lock_tid = 0;
 	mutex_unlock(&private->commit.lock);
+	mtk_notifier_call_chain(MTK_POWER_MODE_DONE, NULL);
 	DDP_PROFILE("[PROFILE] %s-\n", __func__);
+
+#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
+	if (need_mcd_lock)
+		mtk_mcd_panel_unlock(state);
+#endif
 
 	return 0;
 }
@@ -3751,16 +3869,20 @@ int mtk_drm_get_display_caps_ioctl(struct drm_device *dev, void *data,
 /* runtime calculate vsync fps*/
 int lcm_fps_ctx_init(struct drm_crtc *crtc)
 {
-	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
+	struct mtk_drm_crtc *mtk_crtc;
 	struct mtk_ddp_comp *output_comp;
 	unsigned int index;
 
-	if (!crtc || crtc->index >= MAX_CRTC) {
-		if (crtc)
-			DDPPR_ERR("%s:invalid crtc:%d\n",
-				__func__, crtc->base.id);
+	if (!crtc) {
+		DDPPR_ERR("%s, null crtc!\n", __func__);
 		return -EINVAL;
 	}
+	if (crtc->index >= MAX_CRTC) {
+		DDPPR_ERR("%s:invalid crtc:%d\n",
+			  __func__, crtc->base.id);
+		return -EINVAL;
+	}
+	mtk_crtc = to_mtk_crtc(crtc);
 	index = crtc->index;
 
 	if (atomic_read(&lcm_fps_ctx[index].is_inited))
@@ -4600,8 +4722,10 @@ static int mtk_drm_kms_init(struct drm_device *drm)
 	init_waitqueue_head(&private->repaint_data.wq);
 	INIT_LIST_HEAD(&private->repaint_data.job_queue);
 	INIT_LIST_HEAD(&private->repaint_data.job_pool);
-	for (i = 0; i < MAX_CRTC ; ++i)
+	for (i = 0; i < MAX_CRTC ; ++i) {
 		atomic_set(&private->crtc_present[i], 0);
+		atomic_set(&private->crtc_rel_present[i], 0);
+	}
 	atomic_set(&private->rollback_all, 0);
 
 #ifdef CONFIG_DRM_MEDIATEK_DEBUG_FS
@@ -5712,6 +5836,10 @@ SKIP_SIDE_DISP:
 	DDPINFO("%s- ret:%d\n", __func__, ret);
 	if (ret)
 		goto err_pm;
+
+	private->uevent_data.name = "lcm_disconnect";
+	uevent_dev_register(&private->uevent_data);
+	mtk_notifier_activate();
 
 	DDPINFO("%s-\n", __func__);
 

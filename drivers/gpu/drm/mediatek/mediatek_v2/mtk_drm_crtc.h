@@ -635,7 +635,7 @@ struct msync_record {
 struct mtk_msync2_dy {
 	int dy_en;
 	struct msync_record record[MSYNC_MAX_RECORD];
-	unsigned int record_index;
+	int record_index;
 };
 
 struct mtk_msync2 {
@@ -823,6 +823,21 @@ struct mtk_drm_crtc {
 
 	atomic_t force_high_step;
 	int force_high_enabled;
+
+	/* For simple_api */
+	int need_lock_tid;
+	int customer_lock_tid;
+
+	int config_cnt;
+	int frame_update_cnt;
+
+	/* For Frame start / end */
+	struct frame_condition_wq frame_start;
+	struct frame_condition_wq frame_done;
+
+	enum mtk_set_lcm_sceanario set_lcm_scn;
+
+	bool skip_frame;
 };
 
 struct mtk_crtc_state {
@@ -1056,7 +1071,7 @@ void mtk_crtc_stop_for_pm(struct mtk_drm_crtc *mtk_crtc, bool need_wait);
 bool mtk_crtc_frame_buffer_existed(void);
 
 /* ********************* Legacy DRM API **************************** */
-int mtk_drm_format_plane_cpp(uint32_t format, unsigned int plane);
+int mtk_drm_format_plane_cpp(uint32_t format, int plane);
 
 int mtk_drm_switch_te(struct drm_crtc *crtc, int te_num, bool need_lock);
 int mtk_drm_ioctl_get_pq_caps(struct drm_device *dev, void *data,
@@ -1066,4 +1081,5 @@ int mtk_drm_ioctl_set_pq_caps(struct drm_device *dev, void *data,
 void mtk_crtc_prepare_instr(struct drm_crtc *crtc);
 unsigned int check_dsi_underrun_event(void);
 void clear_dsi_underrun_event(void);
+void release_fence_frame_skip(struct drm_crtc *crtc);
 #endif /* MTK_DRM_CRTC_H */
