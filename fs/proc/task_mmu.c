@@ -544,10 +544,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 		}
 
 		if (vma_get_anon_name(vma)) {
-			seq_write(m, "[anon:", 6);
-			seq_puts(m, anon_name->name);
-			seq_write(m, "]\n", 2);
-			return;
+                       seq_pad(m, ' ');
+                       seq_print_vma_name(m, vma);
 		}
 	}
 
