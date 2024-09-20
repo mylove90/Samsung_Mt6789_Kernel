@@ -4833,8 +4833,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	unsigned int cpuset_mems_cookie;
 	unsigned int zonelist_iter_cookie;
 	int reserve_flags;
-	unsigned long alloc_start = jiffies;
-	pg_data_t *pgdat = ac->preferred_zoneref->zone->zone_pgdat;
+//	unsigned long alloc_start = jiffies;
+//	pg_data_t *pgdat = ac->preferred_zoneref->zone->zone_pgdat;
 	bool woke_kswapd = false;
 	bool used_vmpressure = false;
 	unsigned long vh_record;
