@@ -174,8 +174,8 @@ static void amu_scale_freq_tick(void)
 	u64 core_cnt, const_cnt, scale;
 	int cpu = smp_processor_id();
 
-	if (!amu_freq_invariant())
-		return;
+//	if (!amu_freq_invariant())
+//		return;
 
 	if (!cpumask_test_cpu(cpu, amu_fie_cpus))
 		return;
